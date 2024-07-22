@@ -584,8 +584,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_ldtk"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62ffc9ab0edbcf6645dd98a9910c9076af6d055ec1bca7703825f5a23eaca485"
+source = "git+https://github.com/SpecificProtagonist/bevy_ecs_ldtk.git?branch=sprite-anchor#675a6646fe79e11c4a4bde4b96e8a0d573afffcd"
 dependencies = [
  "bevy",
  "bevy_ecs_ldtk_macros",
@@ -603,8 +602,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_ldtk_macros"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3c29128822ac7ee154d9db00f639b6d3061f38a4e765f0bfc43372717db05c"
+source = "git+https://github.com/SpecificProtagonist/bevy_ecs_ldtk.git?branch=sprite-anchor#675a6646fe79e11c4a4bde4b96e8a0d573afffcd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3109,6 +3107,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppv-lite86"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
+
+[[package]]
 name = "presser"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3159,6 +3163,18 @@ version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
+ "libc",
+ "rand_chacha",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
  "rand_core",
 ]
 
@@ -3167,6 +3183,9 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+dependencies = [
+ "getrandom",
+]
 
 [[package]]
 name = "range-alloc"
@@ -3521,6 +3540,7 @@ dependencies = [
  "bevy",
  "bevy_asset_loader",
  "bevy_ecs_ldtk",
+ "rand",
 ]
 
 [[package]]

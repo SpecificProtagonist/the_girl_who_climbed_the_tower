@@ -3,14 +3,13 @@ mod aseprite;
 
 use aseprite::AsepriteLoader;
 use bevy::asset::AssetMetaCheck;
-use bevy::ecs::component::{ComponentHooks, ComponentId, StorageType};
-use bevy::ecs::world::DeferredWorld;
-use bevy::math::vec2;
+use bevy::math::vec3;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use bevy::sprite::Anchor;
 use bevy_asset_loader::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
+use rand::{thread_rng, Rng};
 
 fn main() {
     App::new()
@@ -31,6 +30,7 @@ fn main() {
         )
         .register_asset_loader(AsepriteLoader)
         .insert_resource(ClearColor(Color::BLACK))
+        .register_ldtk_entity::<DoorBundle>("Exit")
         .add_systems(OnEnter(LoadState::Loaded), (setup, spawn_level))
         .add_systems(
             Update,
@@ -38,7 +38,7 @@ fn main() {
                 .chain()
                 .run_if(in_state(LoadState::Loaded)),
         )
-        .add_systems(PostUpdate, sync_transform)
+        .add_systems(Update, play_music)
         .run();
 }
 
@@ -74,41 +74,12 @@ struct Handles {
     bullet: Handle<Image>,
     #[asset(path = "enemy.aseprite")]
     _enemy: Handle<Image>,
-    #[asset(path = "level.ldtk")]
+    #[asset(path = "levels.ldtk")]
     ldtk_project: Handle<LdtkProject>,
-}
-
-#[derive(Deref, DerefMut, Copy, Clone, Debug)]
-struct Pos(Vec2);
-
-impl Component for Pos {
-    const STORAGE_TYPE: StorageType = StorageType::Table;
-
-    fn register_component_hooks(hooks: &mut ComponentHooks) {
-        hooks.on_add(
-            |mut world: DeferredWorld, entity: Entity, _id: ComponentId| {
-                if !world.entity(entity).contains::<Transform>() {
-                    world.commands().entity(entity).insert(Transform::default());
-                }
-                if !world.entity(entity).contains::<GlobalTransform>() {
-                    world
-                        .commands()
-                        .entity(entity)
-                        .insert(GlobalTransform::default());
-                }
-            },
-        );
-    }
 }
 
 #[derive(Component, Deref, DerefMut, Copy, Clone, Default, Debug)]
 struct Vel(Vec2);
-
-fn sync_transform(mut query: Query<(&Pos, &mut Transform)>) {
-    for (pos, mut trans) in &mut query {
-        trans.translation = pos.extend(0.);
-    }
-}
 
 #[derive(Component, Default)]
 struct Player {
@@ -121,16 +92,50 @@ struct Bullet {
     _sprite: Entity,
 }
 
+#[derive(Default, Component)]
+struct Door;
+
+#[derive(Default, Bundle, LdtkEntity)]
+struct DoorBundle {
+    door: Door,
+    #[sprite_sheet_bundle]
+    sprite_bundle: LdtkSpriteSheetBundle,
+}
+
+const LAYER_MOB: f32 = 0.;
+
+#[derive(Component)]
+struct Music;
+fn play_music(mut commands: Commands, query: Query<&Music>, asset_server: Res<AssetServer>) {
+    if query.is_empty() {
+        commands.spawn((
+            Music,
+            AudioBundle {
+                source: asset_server
+                    .load(format!("music/track_{}.ogg", thread_rng().gen_range(1..=7))),
+                settings: PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Despawn,
+                    volume: bevy::audio::Volume::new(0.6),
+                    ..default()
+                },
+            },
+        ));
+    }
+}
+
 fn setup(mut commands: Commands, handles: Res<Handles>) {
-    let mut camera = Camera2dBundle::default();
+    let mut camera = Camera2dBundle {
+        transform: Transform::from_xyz(101., 101., 10.),
+        ..default()
+    };
     camera.projection.scaling_mode = ScalingMode::FixedVertical(176.0);
     commands.spawn(camera);
 
     commands.spawn((
         Player::default(),
-        Pos(Vec2::ZERO),
         Vel::default(),
         SpriteBundle {
+            transform: Transform::from_xyz(101., 101., LAYER_MOB),
             sprite: Sprite {
                 anchor: Anchor::BottomCenter,
                 ..default()
@@ -139,16 +144,13 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
             ..default()
         },
     ));
-    // .with_children(|b| {
-    //     b.spawn(camera);
-    // });
 }
 
 fn player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut player: Query<(
-        &mut Pos,
+        &mut Transform,
         &mut Vel,
         &mut Player,
         &mut Sprite,
@@ -176,7 +178,7 @@ fn player_movement(
     let speed = 60.;
     let vel = dir.normalize_or_zero() * speed;
     velocity.0 = vel;
-    pos.0 += vel * time.delta_seconds();
+    pos.translation += (vel * time.delta_seconds()).extend(0.);
 
     if dir != Vec2::ZERO {
         player.walk_ani += time.delta_seconds();
@@ -202,8 +204,8 @@ fn player_shoot(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut player: Query<(&Pos, &Vel, &mut Player)>,
-    tex_ass: Res<Handles>,
+    mut player: Query<(&Transform, &Vel, &mut Player)>,
+    handles: Res<Handles>,
 ) {
     let Ok((pos, player_vel, mut player)) = player.get_single_mut() else {
         return;
@@ -231,7 +233,7 @@ fn player_shoot(
         return;
     }
     let dir = dir.normalize();
-    let vel = Dir2::new(dir + player_vel.0 * 0.007).unwrap() * 180.;
+    let vel = Dir2::new(dir + player_vel.0 * 0.005).unwrap() * 180.;
 
     player.shoot_cooldown = 0.4;
     let mut sprite = Entity::PLACEHOLDER;
@@ -239,18 +241,19 @@ fn player_shoot(
         .spawn(())
         .with_children(|b| {
             sprite = b
-                .spawn((
-                    Pos(vec2(0., 12.)),
-                    SpriteBundle {
-                        texture: tex_ass.bullet.clone(),
-                        transform: Transform::from_rotation(Quat::from_rotation_z(dir.to_angle())),
+                .spawn((SpriteBundle {
+                    texture: handles.bullet.clone(),
+                    transform: Transform {
+                        translation: vec3(0., 12., 0.),
+                        rotation: Quat::from_rotation_z(dir.to_angle()),
                         ..default()
                     },
-                ))
+                    ..default()
+                },))
                 .id();
         })
         .insert((
-            Pos(pos.0 + dir * 5.),
+            Transform::from_translation(pos.translation + dir.extend(0.) * 5.),
             Vel(vel),
             Bullet { _sprite: sprite },
             GlobalTransform::default(),
@@ -258,9 +261,9 @@ fn player_shoot(
         ));
 }
 
-fn move_bullets(mut bullets: Query<(&mut Pos, &Vel), With<Bullet>>, time: Res<Time>) {
+fn move_bullets(mut bullets: Query<(&mut Transform, &Vel), With<Bullet>>, time: Res<Time>) {
     for (mut pos, vel) in &mut bullets {
-        pos.0 += vel.0 * time.delta_seconds();
+        pos.translation += vel.extend(0.) * time.delta_seconds();
     }
 }
 
@@ -308,7 +311,7 @@ fn spawn_level(
     commands.insert_resource(LevelSelection::iid(ldtk_level.iid.clone()));
     commands.spawn(LdtkWorldBundle {
         ldtk_handle: handles.ldtk_project.clone(),
-        transform: Transform::from_xyz(-104., -104., -3.),
+        transform: Transform::from_xyz(0., 0., -3.),
         ..Default::default()
     });
 }
