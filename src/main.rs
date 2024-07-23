@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
 mod collision;
+mod music;
 mod player;
 
 use aseprite::AsepriteLoader;
@@ -10,8 +11,9 @@ use bevy::sprite::Anchor;
 use bevy::{asset::AssetMetaCheck, math::vec2};
 use bevy_asset_loader::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
+use collision::Level;
+use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
-use rand::{thread_rng, Rng};
 
 fn main() {
     App::new()
@@ -32,7 +34,6 @@ fn main() {
         )
         .register_asset_loader(AsepriteLoader)
         .insert_resource(ClearColor(Color::BLACK))
-        .register_ldtk_entity::<DoorBundle>("Exit")
         .add_systems(OnEnter(LoadState::Loaded), (setup, spawn_level))
         .add_systems(
             Update,
@@ -40,7 +41,7 @@ fn main() {
                 .chain()
                 .run_if(in_state(LoadState::Loaded)),
         )
-        .add_systems(Update, play_music)
+        .add_systems(Update, (play_music, music_volume))
         .run();
 }
 
@@ -58,7 +59,7 @@ enum LoadState {
 #[derive(AssetCollection, Resource)]
 struct Handles {
     #[asset(path = "test.aseprite")]
-    test: Handle<Image>,
+    _test: Handle<Image>,
     #[asset(
         paths("player_down_0.aseprite", "player_down_1.aseprite"),
         collection(typed)
@@ -78,6 +79,10 @@ struct Handles {
     bullet: Handle<Image>,
     #[asset(path = "enemy.aseprite")]
     _enemy: Handle<Image>,
+    #[asset(path = "door.aseprite")]
+    door: Handle<Image>,
+    #[asset(path = "grate.aseprite")]
+    grate: Handle<Image>,
     #[asset(path = "levels.ldtk")]
     ldtk_project: Handle<LdtkProject>,
 }
@@ -88,33 +93,7 @@ struct Vel(Vec2);
 #[derive(Default, Component)]
 struct Door;
 
-#[derive(Default, Bundle, LdtkEntity)]
-struct DoorBundle {
-    door: Door,
-    #[sprite_sheet_bundle]
-    sprite_bundle: LdtkSpriteSheetBundle,
-}
-
 const LAYER_MOB: f32 = 0.;
-
-#[derive(Component)]
-struct Music;
-fn play_music(mut commands: Commands, query: Query<&Music>, asset_server: Res<AssetServer>) {
-    if query.is_empty() {
-        commands.spawn((
-            Music,
-            AudioBundle {
-                source: asset_server
-                    .load(format!("music/track_{}.ogg", thread_rng().gen_range(1..=7))),
-                settings: PlaybackSettings {
-                    mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: bevy::audio::Volume::new(0.3),
-                    ..default()
-                },
-            },
-        ));
-    }
-}
 
 fn setup(mut commands: Commands, handles: Res<Handles>) {
     let mut camera = Camera2dBundle {
@@ -136,24 +115,11 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
             ..default()
         },
     ));
-
-    commands.spawn(SpriteBundle {
-        transform: Transform::from_xyz(10. * CELL_SIZE, 10. * CELL_SIZE, 1.),
-        texture: handles.test.clone(),
-        ..Default::default()
-    });
 }
 
 static CELL_SIZE: f32 = 12.;
 static LEVEL_WIDTH: i32 = 12 * CELL_SIZE as i32;
 static LEVEL_HEIGHT: i32 = 12 * CELL_SIZE as i32;
-
-#[derive(Resource)]
-struct Level {
-    grid: Vec<i32>,
-    width: i32,
-    height: i32,
-}
 
 fn spawn_level(
     mut commands: Commands,
@@ -172,7 +138,7 @@ fn spawn_level(
                 && (level.world_y == level_difficulty * LEVEL_HEIGHT)
         })
         .unwrap();
-    let layer = ldtk_level
+    let tile_layer = ldtk_level
         .layer_instances
         .as_ref()
         .unwrap()
@@ -181,9 +147,7 @@ fn spawn_level(
         .unwrap();
 
     commands.insert_resource(Level {
-        grid: layer.int_grid_csv.clone(),
-        width: layer.c_wid,
-        height: layer.c_hei,
+        grid: tile_layer.int_grid_csv.clone(),
     });
     commands.insert_resource(LevelSelection::iid(ldtk_level.iid.clone()));
     commands.spawn(LdtkWorldBundle {
@@ -191,23 +155,56 @@ fn spawn_level(
         transform: Transform::from_xyz(0., 0., -3.),
         ..Default::default()
     });
+
+    assert_eq!((tile_layer.c_wid, tile_layer.c_hei), (16, 16));
+    assert_eq!(
+        (tile_layer.px_total_offset_x, tile_layer.px_total_offset_y),
+        (0, 0)
+    );
+
+    let entity_layer = ldtk_level
+        .layer_instances
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|l| l.identifier == "Entities")
+        .unwrap();
+
+    let px_to_world = |entity: &EntityInstance, vertical: bool| {
+        let mut y = 192. - entity.px.y as f32;
+        if vertical {
+            y -= entity.height as f32 / 2.
+        }
+        vec2(entity.px.x as f32, y)
+    };
+    for entity in entity_layer
+        .entity_instances
+        .iter()
+        .filter(|e| e.identifier == "Door")
+    {
+        commands
+            .spawn((
+                Door,
+                SpriteBundle {
+                    transform: Transform::from_translation(px_to_world(entity, true).extend(-0.5)),
+                    texture: handles.door.clone(),
+                    sprite: Sprite {
+                        anchor: Anchor::BottomCenter,
+                        ..default()
+                    },
+                    ..default()
+                },
+            ))
+            .with_children(|b| {
+                b.spawn(SpriteBundle {
+                    transform: Transform::from_xyz(0., 0., 0.1),
+                    texture: handles.grate.clone(),
+                    sprite: Sprite {
+                        anchor: Anchor::BottomCenter,
+                        ..default()
+                    },
+                    ..default()
+                });
+            });
+    }
 }
-// let width = layer.c_wid;
-// let height = layer.c_hei;
-// for y in 0..height {
-//     for x in 0..width {
-//         commands.spawn(SpriteBundle {
-//             transform: Transform::from_translation(vec3(
-//                 (x as f32 - width as f32 / 2.) * CELL_SIZE,
-//                 (y as f32 - height as f32 / 2.) * -CELL_SIZE,
-//                 10.,
-//             )),
-//             texture: if layer.int_grid_csv[(x + y * width) as usize] == 1 {
-//                 asset_server.load("enemy.aseprite")
-//             } else {
-//                 asset_server.load("bullet.aseprite")
-//             },
-//             ..default()
-//         });
-//     }
-// }

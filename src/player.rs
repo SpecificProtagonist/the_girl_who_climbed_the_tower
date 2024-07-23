@@ -1,9 +1,10 @@
-use bevy::{
-    math::{ivec2, vec2, vec3},
-    prelude::*,
-};
+use bevy::{math::vec3, prelude::*};
 
-use crate::{Handles, Vel, CELL_SIZE};
+use crate::{Handles, Level, Vel};
+
+const PLAYER_SIZE: f32 = 3.;
+const PLAYER_SPEED: f32 = 55.;
+const BULLET_SIZE: f32 = 1.5;
 
 #[derive(Component, Default)]
 pub struct Player {
@@ -26,8 +27,8 @@ pub fn player_movement(
         &mut Sprite,
         &mut Handle<Image>,
     )>,
-    tex_ass: Res<Handles>,
-    mut gizmos: Gizmos,
+    handles: Res<Handles>,
+    level: Res<Level>,
 ) {
     let Ok((mut pos, mut velocity, mut player, mut sprite, mut tex)) = player.get_single_mut()
     else {
@@ -46,37 +47,11 @@ pub fn player_movement(
     if keyboard_input.pressed(KeyCode::KeyW) {
         dir += Vec2::Y;
     }
-    let speed = 30.;
-    let vel = dir.normalize_or_zero() * speed;
-    let mut movement = vel * time.delta_seconds();
-    gizmos.rect_2d(
-        vec2(10., 10.) * CELL_SIZE,
-        0.,
-        Vec2::splat(CELL_SIZE),
-        Color::srgb(1., 1., 0.),
-    );
-    let collider_pos = vec2(10., 10.) * CELL_SIZE;
-    // gizmos.circle_2d(collider_pos, 7., Color::srgb(0., 1., 0.));
-    gizmos.circle_2d(pos.translation.xy(), 3., Color::srgb(0., 1., 0.));
-    if vel != Vec2::ZERO {
-        // crate::collision::with_ball(
-        //     &mut gizmos,
-        //     collider_pos,
-        //     7.,
-        //     pos.translation.xy(),
-        //     3.,
-        //     movement,
-        // );
-        movement = crate::collision::with_cell(
-            &mut gizmos,
-            ivec2(10, 10),
-            pos.translation.xy(),
-            3.,
-            movement,
-        );
-    }
-    velocity.0 = vel;
-    pos.translation += (movement).extend(0.);
+    let vel = dir.normalize_or_zero() * PLAYER_SPEED;
+    let attempt_movement = vel * time.delta_seconds();
+    let movement = level.collision(pos.translation.xy(), PLAYER_SIZE, attempt_movement);
+    velocity.0 = movement / time.delta_seconds();
+    pos.translation += movement.extend(0.);
 
     if dir != Vec2::ZERO {
         player.walk_ani += time.delta_seconds();
@@ -86,14 +61,14 @@ pub fn player_movement(
     }
     let index = if player.walk_ani < 0.3 { 0 } else { 1 };
     if dir.y < 0. {
-        *tex = tex_ass.player_down[index].clone();
+        *tex = handles.player_down[index].clone();
     } else if dir.y > 0. {
-        *tex = tex_ass.player_up[index].clone();
+        *tex = handles.player_up[index].clone();
     } else if dir.x < 0. {
-        *tex = tex_ass.player_side[index].clone();
+        *tex = handles.player_side[index].clone();
         sprite.flip_x = true;
     } else if dir.x > 0. {
-        *tex = tex_ass.player_side[index].clone();
+        *tex = handles.player_side[index].clone();
         sprite.flip_x = false;
     }
 }
@@ -142,7 +117,7 @@ pub fn player_shoot(
                 .spawn((SpriteBundle {
                     texture: handles.bullet.clone(),
                     transform: Transform {
-                        translation: vec3(0., 12., 0.),
+                        translation: vec3(0., 9., 0.),
                         rotation: Quat::from_rotation_z(dir.to_angle()),
                         ..default()
                     },
@@ -159,8 +134,18 @@ pub fn player_shoot(
         ));
 }
 
-pub fn move_bullets(mut bullets: Query<(&mut Transform, &Vel), With<Bullet>>, time: Res<Time>) {
-    for (mut pos, vel) in &mut bullets {
-        pos.translation += vel.extend(0.) * time.delta_seconds();
+pub fn move_bullets(
+    mut commands: Commands,
+    level: Res<Level>,
+    mut bullets: Query<(Entity, &mut Transform, &Vel), With<Bullet>>,
+    time: Res<Time>,
+) {
+    for (entity, mut trans, vel) in &mut bullets {
+        let pos = trans.translation.xy();
+        let movement = vel.0 * time.delta_seconds();
+        if movement != level.collision(pos, BULLET_SIZE, movement) {
+            commands.entity(entity).despawn_recursive();
+        }
+        trans.translation += movement.extend(0.);
     }
 }

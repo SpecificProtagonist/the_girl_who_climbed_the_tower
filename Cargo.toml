@@ -25,6 +25,6 @@ asefile = "0.3.8"
 # bevy = "0.14"
 bevy = { version="0.14", features=["dynamic_linking"]}
 bevy_asset_loader = "0.21.0"
-bevy_ecs_ldtk = {version = "0.10", git="https://github.com/SpecificProtagonist/bevy_ecs_ldtk.git", branch = "sprite-anchor"}
+bevy_ecs_ldtk = "0.10"
 rand = "0.8.5"
 
