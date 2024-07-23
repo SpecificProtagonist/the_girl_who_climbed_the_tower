@@ -1,0 +1,13 @@
+Canvas element:
+<canvas id="game-canvas"></canvas>
+
+Set window plugin to use it:
+.set(WindowPlugin {
+    primary_window: Some(Window {
+        canvas: Some("canvas".to_owned()),
+        ..default()
+    }),
+    ..default()
+})
+
+doesn't get used

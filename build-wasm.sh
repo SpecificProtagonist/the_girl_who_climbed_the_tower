@@ -1,4 +1,5 @@
 #!/bin/sh
+rm -r target/web
 cp -r wasm target/web
 cp -r assets target/web/
 cargo build --profile wasm-release --target wasm32-unknown-unknown

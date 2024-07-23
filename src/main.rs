@@ -1,14 +1,16 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
+mod collision;
+mod player;
 
 use aseprite::AsepriteLoader;
-use bevy::asset::AssetMetaCheck;
-use bevy::math::vec3;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use bevy::sprite::Anchor;
+use bevy::{asset::AssetMetaCheck, math::vec2};
 use bevy_asset_loader::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
+use player::{move_bullets, player_movement, player_shoot, Player};
 use rand::{thread_rng, Rng};
 
 fn main() {
@@ -55,6 +57,8 @@ enum LoadState {
 
 #[derive(AssetCollection, Resource)]
 struct Handles {
+    #[asset(path = "test.aseprite")]
+    test: Handle<Image>,
     #[asset(
         paths("player_down_0.aseprite", "player_down_1.aseprite"),
         collection(typed)
@@ -81,17 +85,6 @@ struct Handles {
 #[derive(Component, Deref, DerefMut, Copy, Clone, Default, Debug)]
 struct Vel(Vec2);
 
-#[derive(Component, Default)]
-struct Player {
-    walk_ani: f32,
-    shoot_cooldown: f32,
-}
-
-#[derive(Component)]
-struct Bullet {
-    _sprite: Entity,
-}
-
 #[derive(Default, Component)]
 struct Door;
 
@@ -115,7 +108,7 @@ fn play_music(mut commands: Commands, query: Query<&Music>, asset_server: Res<As
                     .load(format!("music/track_{}.ogg", thread_rng().gen_range(1..=7))),
                 settings: PlaybackSettings {
                     mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: bevy::audio::Volume::new(0.6),
+                    volume: bevy::audio::Volume::new(0.3),
                     ..default()
                 },
             },
@@ -130,141 +123,25 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
     };
     camera.projection.scaling_mode = ScalingMode::FixedVertical(176.0);
     commands.spawn(camera);
-
     commands.spawn((
         Player::default(),
         Vel::default(),
         SpriteBundle {
             transform: Transform::from_xyz(101., 101., LAYER_MOB),
             sprite: Sprite {
-                anchor: Anchor::BottomCenter,
+                anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
                 ..default()
             },
             texture: handles.player_down[0].clone(),
             ..default()
         },
     ));
-}
 
-fn player_movement(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    mut player: Query<(
-        &mut Transform,
-        &mut Vel,
-        &mut Player,
-        &mut Sprite,
-        &mut Handle<Image>,
-    )>,
-    tex_ass: Res<Handles>,
-) {
-    let Ok((mut pos, mut velocity, mut player, mut sprite, mut tex)) = player.get_single_mut()
-    else {
-        return;
-    };
-    let mut dir = Vec2::ZERO;
-    if keyboard_input.pressed(KeyCode::KeyA) {
-        dir -= Vec2::X;
-    }
-    if keyboard_input.pressed(KeyCode::KeyD) {
-        dir += Vec2::X;
-    }
-    if keyboard_input.pressed(KeyCode::KeyS) {
-        dir -= Vec2::Y;
-    }
-    if keyboard_input.pressed(KeyCode::KeyW) {
-        dir += Vec2::Y;
-    }
-    let speed = 60.;
-    let vel = dir.normalize_or_zero() * speed;
-    velocity.0 = vel;
-    pos.translation += (vel * time.delta_seconds()).extend(0.);
-
-    if dir != Vec2::ZERO {
-        player.walk_ani += time.delta_seconds();
-        if player.walk_ani > 0.6 {
-            player.walk_ani -= 0.6;
-        }
-    }
-    let index = if player.walk_ani < 0.3 { 0 } else { 1 };
-    if dir.y < 0. {
-        *tex = tex_ass.player_down[index].clone();
-    } else if dir.y > 0. {
-        *tex = tex_ass.player_up[index].clone();
-    } else if dir.x < 0. {
-        *tex = tex_ass.player_side[index].clone();
-        sprite.flip_x = true;
-    } else if dir.x > 0. {
-        *tex = tex_ass.player_side[index].clone();
-        sprite.flip_x = false;
-    }
-}
-
-fn player_shoot(
-    mut commands: Commands,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    mut player: Query<(&Transform, &Vel, &mut Player)>,
-    handles: Res<Handles>,
-) {
-    let Ok((pos, player_vel, mut player)) = player.get_single_mut() else {
-        return;
-    };
-    player.shoot_cooldown -= time.delta_seconds();
-    if player.shoot_cooldown > 0. {
-        return;
-    }
-
-    let mut dir = Vec2::ZERO;
-    if keyboard_input.pressed(KeyCode::ArrowLeft) {
-        dir -= Vec2::X;
-    }
-    if keyboard_input.pressed(KeyCode::ArrowRight) {
-        dir += Vec2::X;
-    }
-    if keyboard_input.pressed(KeyCode::ArrowDown) {
-        dir -= Vec2::Y;
-    }
-    if keyboard_input.pressed(KeyCode::ArrowUp) {
-        dir += Vec2::Y;
-    }
-
-    if dir == Vec2::ZERO {
-        return;
-    }
-    let dir = dir.normalize();
-    let vel = Dir2::new(dir + player_vel.0 * 0.005).unwrap() * 180.;
-
-    player.shoot_cooldown = 0.4;
-    let mut sprite = Entity::PLACEHOLDER;
-    commands
-        .spawn(())
-        .with_children(|b| {
-            sprite = b
-                .spawn((SpriteBundle {
-                    texture: handles.bullet.clone(),
-                    transform: Transform {
-                        translation: vec3(0., 12., 0.),
-                        rotation: Quat::from_rotation_z(dir.to_angle()),
-                        ..default()
-                    },
-                    ..default()
-                },))
-                .id();
-        })
-        .insert((
-            Transform::from_translation(pos.translation + dir.extend(0.) * 5.),
-            Vel(vel),
-            Bullet { _sprite: sprite },
-            GlobalTransform::default(),
-            InheritedVisibility::default(),
-        ));
-}
-
-fn move_bullets(mut bullets: Query<(&mut Transform, &Vel), With<Bullet>>, time: Res<Time>) {
-    for (mut pos, vel) in &mut bullets {
-        pos.translation += vel.extend(0.) * time.delta_seconds();
-    }
+    commands.spawn(SpriteBundle {
+        transform: Transform::from_xyz(10. * CELL_SIZE, 10. * CELL_SIZE, 1.),
+        texture: handles.test.clone(),
+        ..Default::default()
+    });
 }
 
 static CELL_SIZE: f32 = 12.;
