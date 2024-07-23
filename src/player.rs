@@ -1,6 +1,6 @@
 use bevy::{math::vec3, prelude::*};
 
-use crate::{Handles, Level, Vel};
+use crate::{CollisionGrid, Handles, Vel};
 
 const PLAYER_SIZE: f32 = 4.;
 const PLAYER_SPEED: f32 = 55.;
@@ -28,7 +28,7 @@ pub fn player_movement(
         &mut Handle<Image>,
     )>,
     handles: Res<Handles>,
-    level: Res<Level>,
+    level: Res<CollisionGrid>,
 ) {
     let Ok((mut pos, mut velocity, mut player, mut sprite, mut tex)) = player.get_single_mut()
     else {
@@ -136,7 +136,7 @@ pub fn player_shoot(
 
 pub fn move_bullets(
     mut commands: Commands,
-    level: Res<Level>,
+    level: Res<CollisionGrid>,
     mut bullets: Query<(Entity, &mut Transform, &Vel), With<Bullet>>,
     time: Res<Time>,
 ) {

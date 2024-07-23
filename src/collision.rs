@@ -5,14 +5,14 @@ use bevy::{
     prelude::*,
 };
 
-use crate::CELL_SIZE;
+use crate::level::CELL_SIZE;
 
 #[derive(Resource)]
-pub struct Level {
+pub struct CollisionGrid {
     pub grid: Vec<i32>,
 }
 
-impl Level {
+impl CollisionGrid {
     pub fn collision(&self, pos: Vec2, radius: f32, mut movement: Vec2, flying: bool) -> Vec2 {
         let min = ((pos.min(pos + movement) - radius) / CELL_SIZE - 0.5)
             .round()
@@ -35,7 +35,7 @@ impl Level {
     }
 }
 
-impl Index<IVec2> for Level {
+impl Index<IVec2> for CollisionGrid {
     type Output = i32;
 
     fn index(&self, index: IVec2) -> &Self::Output {

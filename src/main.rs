@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
 mod collision;
+mod level;
 mod music;
 mod player;
 
@@ -11,7 +12,8 @@ use bevy::sprite::Anchor;
 use bevy::{asset::AssetMetaCheck, math::vec2};
 use bevy_asset_loader::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
-use collision::Level;
+use collision::CollisionGrid;
+use level::spawn_level;
 use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
 
@@ -42,6 +44,7 @@ fn main() {
                 .run_if(in_state(LoadState::Loaded)),
         )
         .add_systems(Update, (play_music, music_volume))
+        .add_systems(PostUpdate, sync_layer)
         .run();
 }
 
@@ -58,6 +61,10 @@ enum LoadState {
 
 #[derive(AssetCollection, Resource)]
 struct Handles {
+    #[asset(texture_atlas_layout(tile_size_x = 12, tile_size_y = 12, columns = 12, rows = 12))]
+    layout: Handle<TextureAtlasLayout>,
+    #[asset(path = "tiles.aseprite")]
+    tiles: Handle<Image>,
     #[asset(path = "test.aseprite")]
     _test: Handle<Image>,
     #[asset(
@@ -87,13 +94,20 @@ struct Handles {
     ldtk_project: Handle<LdtkProject>,
 }
 
+#[derive(Component)]
+struct Layer(f32);
+
+fn sync_layer(mut query: Query<(&mut Transform, &Layer)>) {
+    for (mut transform, layer) in &mut query {
+        transform.translation.z = layer.0 - transform.translation.y / 1000.;
+    }
+}
+
 #[derive(Component, Deref, DerefMut, Copy, Clone, Default, Debug)]
 struct Vel(Vec2);
 
 #[derive(Default, Component)]
 struct Door;
-
-const LAYER_MOB: f32 = 1.;
 
 fn setup(mut commands: Commands, handles: Res<Handles>) {
     let mut camera = Camera2dBundle {
@@ -104,9 +118,10 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
     commands.spawn(camera);
     commands.spawn((
         Player::default(),
+        Layer(0.0),
         Vel::default(),
         SpriteBundle {
-            transform: Transform::from_xyz(101., 101., LAYER_MOB),
+            transform: Transform::from_xyz(101., 101., 0.),
             sprite: Sprite {
                 anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
                 ..default()
@@ -115,96 +130,4 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
             ..default()
         },
     ));
-}
-
-static CELL_SIZE: f32 = 12.;
-static LEVEL_WIDTH: i32 = 12 * CELL_SIZE as i32;
-static LEVEL_HEIGHT: i32 = 12 * CELL_SIZE as i32;
-
-fn spawn_level(
-    mut commands: Commands,
-    ldtk_project_assets: Res<Assets<LdtkProject>>,
-    handles: Res<Handles>,
-) {
-    let level_index = 0;
-    let level_difficulty = 0;
-    let ldtk_project = ldtk_project_assets.get(&handles.ldtk_project).unwrap();
-    let ldtk_level = ldtk_project
-        .json_data()
-        .levels
-        .iter()
-        .find(|level| {
-            (level.world_x == level_index * LEVEL_WIDTH)
-                && (level.world_y == level_difficulty * LEVEL_HEIGHT)
-        })
-        .unwrap();
-    let tile_layer = ldtk_level
-        .layer_instances
-        .as_ref()
-        .unwrap()
-        .iter()
-        .find(|l| l.identifier == "Tiles")
-        .unwrap();
-
-    commands.insert_resource(Level {
-        grid: tile_layer.int_grid_csv.clone(),
-    });
-    commands.insert_resource(LevelSelection::iid(ldtk_level.iid.clone()));
-    commands.spawn(LdtkWorldBundle {
-        ldtk_handle: handles.ldtk_project.clone(),
-        transform: Transform::from_xyz(0., 0., -3.),
-        ..Default::default()
-    });
-
-    assert_eq!((tile_layer.c_wid, tile_layer.c_hei), (16, 16));
-    assert_eq!(
-        (tile_layer.px_total_offset_x, tile_layer.px_total_offset_y),
-        (0, 0)
-    );
-
-    let entity_layer = ldtk_level
-        .layer_instances
-        .as_ref()
-        .unwrap()
-        .iter()
-        .find(|l| l.identifier == "Entities")
-        .unwrap();
-
-    let px_to_world = |entity: &EntityInstance, vertical: bool| {
-        let mut y = 192. - entity.px.y as f32;
-        if vertical {
-            y -= entity.height as f32 / 2.
-        }
-        vec2(entity.px.x as f32, y)
-    };
-    for entity in entity_layer
-        .entity_instances
-        .iter()
-        .filter(|e| e.identifier == "Door")
-    {
-        commands
-            .spawn((
-                Door,
-                SpriteBundle {
-                    transform: Transform::from_translation(px_to_world(entity, true).extend(-0.5)),
-                    texture: handles.door.clone(),
-                    sprite: Sprite {
-                        anchor: Anchor::BottomCenter,
-                        ..default()
-                    },
-                    ..default()
-                },
-            ))
-            .with_children(|b| {
-                b.spawn(SpriteBundle {
-                    transform: Transform::from_xyz(0., 0., 0.1),
-                    texture: handles.grate.clone(),
-                    sprite: Sprite {
-                        anchor: Anchor::BottomCenter,
-                        ..default()
-                    },
-                    ..default()
-                });
-            });
-    }
 }

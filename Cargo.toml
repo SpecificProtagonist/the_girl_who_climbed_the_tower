@@ -24,7 +24,8 @@ anyhow = "1.0.86"
 asefile = "0.3.8"
 # bevy = "0.14"
 bevy = { version="0.14", features=["dynamic_linking"]}
-bevy_asset_loader = "0.21.0"
+bevy_asset_loader = {version="0.21", features=["2d"]}
+# TODO: remove
 bevy_ecs_ldtk = "0.10"
 rand = "0.8.5"
 
