@@ -2,7 +2,7 @@ use bevy::{math::vec3, prelude::*};
 
 use crate::{Handles, Level, Vel};
 
-const PLAYER_SIZE: f32 = 3.;
+const PLAYER_SIZE: f32 = 4.;
 const PLAYER_SPEED: f32 = 55.;
 const BULLET_SIZE: f32 = 1.5;
 
@@ -49,7 +49,7 @@ pub fn player_movement(
     }
     let vel = dir.normalize_or_zero() * PLAYER_SPEED;
     let attempt_movement = vel * time.delta_seconds();
-    let movement = level.collision(pos.translation.xy(), PLAYER_SIZE, attempt_movement);
+    let movement = level.collision(pos.translation.xy(), PLAYER_SIZE, attempt_movement, false);
     velocity.0 = movement / time.delta_seconds();
     pos.translation += movement.extend(0.);
 
@@ -143,7 +143,7 @@ pub fn move_bullets(
     for (entity, mut trans, vel) in &mut bullets {
         let pos = trans.translation.xy();
         let movement = vel.0 * time.delta_seconds();
-        if movement != level.collision(pos, BULLET_SIZE, movement) {
+        if movement != level.collision(pos, BULLET_SIZE, movement, true) {
             commands.entity(entity).despawn_recursive();
         }
         trans.translation += movement.extend(0.);

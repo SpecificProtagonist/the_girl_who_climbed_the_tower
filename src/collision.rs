@@ -13,7 +13,7 @@ pub struct Level {
 }
 
 impl Level {
-    pub fn collision(&self, pos: Vec2, radius: f32, mut movement: Vec2) -> Vec2 {
+    pub fn collision(&self, pos: Vec2, radius: f32, mut movement: Vec2, flying: bool) -> Vec2 {
         let min = ((pos.min(pos + movement) - radius) / CELL_SIZE - 0.5)
             .round()
             .as_ivec2();
@@ -22,7 +22,11 @@ impl Level {
             .as_ivec2();
         for x in min.x..=max.x {
             for y in min.y..=max.y {
-                if self[ivec2(x, y)] == 0 {
+                if !(0..16).contains(&x) | !(0..16).contains(&y) {
+                    return Vec2::ZERO;
+                }
+                let cell = self[ivec2(x, y)];
+                if (cell == 0) | ((cell == 2) & !flying) {
                     movement = with_cell(ivec2(x, y), pos, radius, movement)
                 }
             }

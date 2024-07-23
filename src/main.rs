@@ -93,7 +93,7 @@ struct Vel(Vec2);
 #[derive(Default, Component)]
 struct Door;
 
-const LAYER_MOB: f32 = 0.;
+const LAYER_MOB: f32 = 1.;
 
 fn setup(mut commands: Commands, handles: Res<Handles>) {
     let mut camera = Camera2dBundle {
