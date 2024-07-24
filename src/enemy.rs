@@ -116,6 +116,7 @@ pub fn spawners(
             spawner.enemy = commands
                 .spawn_empty()
                 .with_children(|b| {
+                    // TODO: modify the sprite shader instead
                     spawner.summon_occluder = b
                         .spawn((
                             Layer(0.1),

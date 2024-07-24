@@ -4,9 +4,11 @@ use bevy::{
     sprite::Anchor,
     utils::HashMap,
 };
-use bevy_ecs_ldtk::{assets::LdtkProject, EntityInstance};
 
-use crate::{Door, Handles, Layer};
+use crate::{
+    ldtk::{EntityInstance, LdtkProject},
+    Door, Handles, Layer,
+};
 
 pub static CELL_SIZE: f32 = 12.;
 static LEVEL_WIDTH: i32 = 12 * CELL_SIZE as i32;
@@ -54,16 +56,10 @@ impl std::ops::Index<IVec2> for Tiles {
 #[derive(Default, Component)]
 pub struct DoorGrate;
 
-pub fn spawn_level(
-    mut commands: Commands,
-    ldtk_project_assets: Res<Assets<LdtkProject>>,
-    handles: Res<Handles>,
-) {
+pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<Handles>) {
     let level_index = 0;
     let level_difficulty = 0;
-    let ldtk_project = ldtk_project_assets.get(&handles.ldtk_project).unwrap();
-    let ldtk_level = ldtk_project
-        .json_data()
+    let ldtk_level = ldtk
         .levels
         .iter()
         .find(|level| {
@@ -93,15 +89,14 @@ pub fn spawn_level(
             .collect(),
     });
 
-    assert_eq!((tile_layer.c_wid, tile_layer.c_hei), (16, 16));
+    assert_eq!((tile_layer.c_width, tile_layer.c_height), (16, 16));
     assert_eq!(
         (tile_layer.px_total_offset_x, tile_layer.px_total_offset_y),
         (0, 0)
     );
 
     // Visuals
-    let tileset = ldtk_project
-        .json_data()
+    let tileset = ldtk
         .defs
         .tilesets
         .iter()

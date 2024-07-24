@@ -2,6 +2,7 @@
 mod aseprite;
 mod collision;
 mod enemy;
+mod ldtk;
 mod level;
 mod music;
 mod player;
@@ -12,23 +13,20 @@ use bevy::render::camera::ScalingMode;
 use bevy::sprite::Anchor;
 use bevy::{asset::AssetMetaCheck, math::vec2};
 use bevy_asset_loader::prelude::*;
-use bevy_ecs_ldtk::prelude::*;
 use enemy::{floaters, hurt_indicator, spawn_enemies, spawners, Enemy, Spawner};
+use ldtk::{LdtkLoader, LdtkProject};
 use level::{open_door, spawn_level};
 use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
 
 fn main() {
     App::new()
-        .add_plugins((
-            DefaultPlugins
-                .set(AssetPlugin {
-                    meta_check: AssetMetaCheck::Never,
-                    ..default()
-                })
-                .set(ImagePlugin::default_nearest()),
-            LdtkPlugin,
-        ))
+        .add_plugins((DefaultPlugins
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            })
+            .set(ImagePlugin::default_nearest()),))
         .init_state::<RoomState>()
         .init_state::<LoadState>()
         .add_loading_state(
@@ -36,8 +34,10 @@ fn main() {
                 .continue_to_state(LoadState::Loaded)
                 .load_collection::<Handles>(),
         )
-        .init_asset::<AnimationData>()
+        .init_asset::<LdtkProject>()
+        .register_asset_loader(LdtkLoader)
         .register_asset_loader(AsepriteImageLoader)
+        .init_asset::<AnimationData>()
         .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
         .add_systems(
@@ -142,7 +142,14 @@ struct Vel(Vec2);
 #[derive(Default, Component)]
 struct Door;
 
-fn setup(mut commands: Commands, handles: Res<Handles>, mut windows: Query<&mut Window>) {
+fn setup(
+    mut commands: Commands,
+    handles: Res<Handles>,
+    mut windows: Query<&mut Window>,
+    mut ldtk: ResMut<Assets<LdtkProject>>,
+) {
+    commands.insert_resource(ldtk.remove(handles.ldtk_project.id()).unwrap());
+
     windows.single_mut().title = "The girl who climbed the tower".to_owned();
 
     let mut camera = Camera2dBundle {
