@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::{
     math::{vec2, vec3},
     prelude::*,
@@ -7,12 +9,13 @@ use bevy::{
 
 use crate::{
     ldtk::{EntityInstance, LdtkProject},
-    Door, Handles, Layer,
+    player::Player,
+    Clearable, Cycle, Door, Handles, Layer, Vel,
 };
 
 pub static CELL_SIZE: f32 = 12.;
-static LEVEL_WIDTH: i32 = 12 * CELL_SIZE as i32;
-static LEVEL_HEIGHT: i32 = 12 * CELL_SIZE as i32;
+static LEVEL_WIDTH: i32 = 16 * CELL_SIZE as i32;
+static LEVEL_HEIGHT: i32 = 16 * CELL_SIZE as i32;
 
 #[derive(Clone, Copy)]
 enum ZLayer {
@@ -54,17 +57,21 @@ impl std::ops::Index<IVec2> for Tiles {
 }
 
 #[derive(Default, Component)]
-pub struct DoorGrate;
+pub struct DeleteOnClear;
 
-pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<Handles>) {
-    let level_index = 0;
-    let level_difficulty = 0;
+pub fn spawn_level(
+    mut commands: Commands,
+    ldtk: Res<LdtkProject>,
+    handles: Res<Handles>,
+    cycle: Res<Cycle>,
+) {
+    let cycle_progress = cycle.current_room as f32 / cycle.rooms.len() as f32;
     let ldtk_level = ldtk
         .levels
         .iter()
         .find(|level| {
-            (level.world_x == level_index * LEVEL_WIDTH)
-                && (level.world_y == level_difficulty * LEVEL_HEIGHT)
+            (level.world_x == cycle.rooms[cycle.current_room].id * LEVEL_WIDTH)
+                && (level.world_y == cycle.rooms[cycle.current_room].difficulty * LEVEL_HEIGHT)
         })
         .unwrap();
 
@@ -158,6 +165,7 @@ pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<
         ids.insert(pos.as_ivec2(), tile.t);
 
         commands.spawn((
+            Clearable,
             Layer(z),
             SpriteBundle {
                 sprite: Sprite {
@@ -204,6 +212,7 @@ pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<
         commands
             .spawn((
                 Door,
+                Clearable,
                 Layer(0.),
                 SpriteBundle {
                     transform: Transform::from_translation(px_to_world(entity, true).extend(0.)),
@@ -217,7 +226,7 @@ pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<
             ))
             .with_children(|b| {
                 b.spawn((
-                    DoorGrate,
+                    DeleteOnClear,
                     SpriteBundle {
                         transform: Transform::from_xyz(0., 0., 0.001),
                         texture: handles.grate.clone(),
@@ -228,10 +237,46 @@ pub fn spawn_level(mut commands: Commands, ldtk: Res<LdtkProject>, handles: Res<
                         ..default()
                     },
                 ));
+                b.spawn((
+                    DeleteOnClear,
+                    SpriteBundle {
+                        transform: Transform {
+                            translation: vec3(0., 8., 0.0005),
+                            rotation: Quat::from_rotation_z(cycle_progress * PI * -2.),
+                            ..default()
+                        },
+                        texture: handles.cycle_indicator.clone(),
+                        ..default()
+                    },
+                ));
             });
+    }
+
+    for entity in entity_layer
+        .entity_instances
+        .iter()
+        .filter(|e| e.identifier == "Player")
+    {
+        commands.spawn((
+            Player::default(),
+            Layer(0.0),
+            Clearable,
+            Vel::default(),
+            SpriteBundle {
+                transform: Transform::from_translation(px_to_world(entity, false).extend(0.)),
+                sprite: Sprite {
+                    anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
+                    ..default()
+                },
+                texture: handles.player_down[0].clone(),
+                ..default()
+            },
+        ));
     }
 }
 
-pub fn open_door(mut commands: Commands, query: Query<Entity, With<DoorGrate>>) {
-    commands.entity(query.single()).despawn();
+pub fn open_door(mut commands: Commands, query: Query<Entity, With<DeleteOnClear>>) {
+    for entity in &query {
+        commands.entity(entity).despawn_recursive();
+    }
 }

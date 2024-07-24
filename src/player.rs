@@ -4,7 +4,7 @@ use crate::{
     collision::{self, grid_collision},
     enemy::{Enemy, HurtIndicator},
     level::Tiles,
-    Handles, Vel,
+    Clearable, Handles, Vel,
 };
 
 const PLAYER_SIZE: f32 = 4.;
@@ -151,6 +151,7 @@ pub fn player_shoot(
         })
         .insert((
             Transform::from_translation(pos.translation + dir.extend(0.) * 5.),
+            Clearable,
             Vel(vel),
             Bullet { _sprite: sprite },
             GlobalTransform::default(),

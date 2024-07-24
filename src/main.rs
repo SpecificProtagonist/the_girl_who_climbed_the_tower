@@ -8,16 +8,17 @@ mod music;
 mod player;
 
 use aseprite::{animations, AnimationData, AsepriteAniLoader, AsepriteImageLoader};
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
-use bevy::sprite::Anchor;
-use bevy::{asset::AssetMetaCheck, math::vec2};
+use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
 use enemy::{floaters, hurt_indicator, spawn_enemies, spawners, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{open_door, spawn_level};
 use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
+use rand::prelude::*;
 
 fn main() {
     App::new()
@@ -40,9 +41,17 @@ fn main() {
         .init_asset::<AnimationData>()
         .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
+        .add_systems(OnEnter(LoadState::Loaded), setup)
         .add_systems(
-            OnEnter(LoadState::Loaded),
-            (setup, spawn_level, spawn_enemies).chain(),
+            OnEnter(RoomState::Fighting),
+            (
+                spawn_level,
+                spawn_enemies,
+                // |mut next_state: ResMut<NextState<RoomState>>| {
+                //     next_state.set(RoomState::Fighting);
+                // },
+            )
+                .chain(),
         )
         .add_systems(
             Update,
@@ -54,9 +63,11 @@ fn main() {
                 floaters,
                 hurt_indicator,
                 check_cleared.run_if(in_state(RoomState::Fighting)),
+                check_exit.run_if(in_state(RoomState::Cleared)),
             )
                 .chain()
-                .run_if(in_state(LoadState::Loaded)),
+                .run_if(in_state(LoadState::Loaded))
+                .run_if(not(in_state(RoomState::Loading))),
         )
         .add_systems(OnEnter(RoomState::Cleared), open_door)
         .add_systems(Update, (play_music, music_volume))
@@ -67,6 +78,7 @@ fn main() {
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum RoomState {
     #[default]
+    Loading,
     Fighting,
     Cleared,
 }
@@ -115,6 +127,8 @@ struct Handles {
     door: Handle<Image>,
     #[asset(path = "grate_circle.aseprite")]
     grate: Handle<Image>,
+    #[asset(path = "cycle_indicator.aseprite")]
+    cycle_indicator: Handle<Image>,
     #[asset(path = "summon_ani.aseprite")]
     summon: Handle<AnimationData>,
     #[asset(path = "levels.ldtk")]
@@ -126,6 +140,9 @@ struct Handles {
     #[asset(path = "sfx/shoot.ogg")]
     sfx_shoot: Handle<AudioSource>,
 }
+
+#[derive(Component)]
+struct Clearable;
 
 #[derive(Component)]
 struct Layer(f32);
@@ -147,8 +164,11 @@ fn setup(
     handles: Res<Handles>,
     mut windows: Query<&mut Window>,
     mut ldtk: ResMut<Assets<LdtkProject>>,
+    mut next_state: ResMut<NextState<RoomState>>,
 ) {
-    commands.insert_resource(ldtk.remove(handles.ldtk_project.id()).unwrap());
+    let ldtk = ldtk.remove(handles.ldtk_project.id()).unwrap();
+    commands.insert_resource(Cycle::new(&ldtk));
+    commands.insert_resource(ldtk);
 
     windows.single_mut().title = "The girl who climbed the tower".to_owned();
 
@@ -158,20 +178,8 @@ fn setup(
     };
     camera.projection.scaling_mode = ScalingMode::FixedVertical(176.0);
     commands.spawn(camera);
-    commands.spawn((
-        Player::default(),
-        Layer(0.0),
-        Vel::default(),
-        SpriteBundle {
-            transform: Transform::from_xyz(101., 101., 0.),
-            sprite: Sprite {
-                anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
-                ..default()
-            },
-            texture: handles.player_down[0].clone(),
-            ..default()
-        },
-    ));
+
+    next_state.set(RoomState::Fighting);
 }
 
 fn check_cleared(
@@ -180,5 +188,76 @@ fn check_cleared(
 ) {
     if query.is_empty() {
         next_state.set(RoomState::Cleared);
+    }
+}
+
+fn check_exit(
+    mut commands: Commands,
+    player: Query<&Transform, With<Player>>,
+    door: Query<&Transform, With<Door>>,
+    clearable: Query<Entity, With<Clearable>>,
+    mut cycle: ResMut<Cycle>,
+    mut next_state: ResMut<NextState<RoomState>>,
+) {
+    // Check for exit
+    let player = player.single().translation.xy();
+    let door = door.single().translation.xy();
+    let off = (door - player).abs();
+    if (off.x > 5.) | (off.y > 5.) {
+        return;
+    }
+
+    // Clear room
+    for entity in &clearable {
+        commands.entity(entity).despawn_recursive()
+    }
+
+    // Next room
+    cycle.current_room += 1;
+    if cycle.current_room == cycle.rooms.len() {
+        cycle.current_room = 0;
+        let room = cycle.rooms.choose_mut(&mut thread_rng()).unwrap();
+        if room.difficulty < room.max_difficulty {
+            room.difficulty += 1;
+        }
+    }
+
+    next_state.set(RoomState::Fighting);
+}
+
+struct Room {
+    id: i32,
+    difficulty: i32,
+    max_difficulty: i32,
+}
+
+#[derive(Resource)]
+struct Cycle {
+    rooms: Vec<Room>,
+    current_room: usize,
+}
+
+impl Cycle {
+    fn new(ldtk: &LdtkProject) -> Self {
+        let mut available = HashMap::new();
+        for level in &ldtk.levels {
+            let id = level.world_x / 192;
+            let difficulty = level.world_y / 192;
+            let max_difficulty = available.entry(id).or_insert(0);
+            *max_difficulty = (*max_difficulty).max(difficulty);
+        }
+        let mut rooms = Vec::new();
+        for (id, max) in available {
+            rooms.push(Room {
+                id,
+                difficulty: 0,
+                max_difficulty: max,
+            });
+        }
+        rooms.shuffle(&mut thread_rng());
+        Self {
+            rooms,
+            current_room: 0,
+        }
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     aseprite::Animation,
     collision::grid_collision,
     level::{Tile, Tiles, CELL_SIZE},
-    Handles, Layer, Vel,
+    Clearable, Handles, Layer, Vel,
 };
 
 static FLOATER_SIZE: f32 = 5.;
@@ -64,8 +64,8 @@ pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>) {
             }
         }
     }
-    for i in 0..10 {
-        let delay = 3. + 0.3 * i as f32;
+    for i in 0..2 {
+        let delay = 2. + 0.3 * i as f32;
         let tile_center =
             (floor.choose(&mut thread_rng()).unwrap().as_vec2() + vec2(0.5, 0.5)) * CELL_SIZE;
         let offset = grid_collision(
@@ -78,7 +78,7 @@ pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>) {
             ) * CELL_SIZE,
             false,
         );
-        commands.spawn(Spawner::create(tile_center + offset, delay));
+        commands.spawn((Spawner::create(tile_center + offset, delay), Clearable));
     }
 }
 
@@ -118,22 +118,20 @@ pub fn spawners(
                 .with_children(|b| {
                     // TODO: modify the sprite shader instead
                     spawner.summon_occluder = b
-                        .spawn((
-                            Layer(0.1),
-                            SpriteBundle {
-                                sprite: Sprite {
-                                    anchor: bevy::sprite::Anchor::BottomCenter,
-                                    color: Color::hsla(300., 1., 0.85, 1.),
-                                    ..default()
-                                },
-                                texture: handles.enemy_summon.clone(),
-                                transform: Transform::from_xyz(0., 0., 0.0001),
+                        .spawn((SpriteBundle {
+                            sprite: Sprite {
+                                anchor: bevy::sprite::Anchor::BottomCenter,
+                                color: Color::hsla(300., 1., 0.85, 1.),
                                 ..default()
                             },
-                        ))
+                            texture: handles.enemy_summon.clone(),
+                            transform: Transform::from_xyz(0., 0., 0.0001),
+                            ..default()
+                        },))
                         .id();
                 })
                 .insert((
+                    Clearable,
                     Layer(0.),
                     Vel(Vec2::ZERO),
                     SpriteBundle {
