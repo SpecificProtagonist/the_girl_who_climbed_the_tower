@@ -1,19 +1,20 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
 mod collision;
+mod enemy;
 mod level;
 mod music;
 mod player;
 
-use aseprite::AsepriteLoader;
+use aseprite::{animations, AnimationData, AsepriteAniLoader, AsepriteImageLoader};
 use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use bevy::sprite::Anchor;
 use bevy::{asset::AssetMetaCheck, math::vec2};
 use bevy_asset_loader::prelude::*;
 use bevy_ecs_ldtk::prelude::*;
-use collision::CollisionGrid;
-use level::spawn_level;
+use enemy::{floaters, hurt_indicator, spawn_enemies, spawners, Enemy, Spawner};
+use level::{open_door, spawn_level};
 use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
 
@@ -28,24 +29,46 @@ fn main() {
                 .set(ImagePlugin::default_nearest()),
             LdtkPlugin,
         ))
+        .init_state::<RoomState>()
         .init_state::<LoadState>()
         .add_loading_state(
             LoadingState::new(LoadState::AssetLoading)
                 .continue_to_state(LoadState::Loaded)
                 .load_collection::<Handles>(),
         )
-        .register_asset_loader(AsepriteLoader)
+        .init_asset::<AnimationData>()
+        .register_asset_loader(AsepriteImageLoader)
+        .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
-        .add_systems(OnEnter(LoadState::Loaded), (setup, spawn_level))
+        .add_systems(
+            OnEnter(LoadState::Loaded),
+            (setup, spawn_level, spawn_enemies).chain(),
+        )
         .add_systems(
             Update,
-            (player_movement, player_shoot, move_bullets)
+            (
+                player_movement,
+                player_shoot,
+                move_bullets,
+                spawners,
+                floaters,
+                hurt_indicator,
+                check_cleared.run_if(in_state(RoomState::Fighting)),
+            )
                 .chain()
                 .run_if(in_state(LoadState::Loaded)),
         )
+        .add_systems(OnEnter(RoomState::Cleared), open_door)
         .add_systems(Update, (play_music, music_volume))
-        .add_systems(PostUpdate, sync_layer)
+        .add_systems(PostUpdate, (sync_layer, animations))
         .run();
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
+enum RoomState {
+    #[default]
+    Fighting,
+    Cleared,
 }
 
 fn default<T: Default>() -> T {
@@ -85,13 +108,23 @@ struct Handles {
     #[asset(path = "bullet.aseprite")]
     bullet: Handle<Image>,
     #[asset(path = "enemy.aseprite")]
-    _enemy: Handle<Image>,
+    enemy: Handle<Image>,
+    #[asset(path = "enemy_summon.aseprite")]
+    enemy_summon: Handle<Image>,
     #[asset(path = "door.aseprite")]
     door: Handle<Image>,
-    #[asset(path = "grate.aseprite")]
+    #[asset(path = "grate_circle.aseprite")]
     grate: Handle<Image>,
+    #[asset(path = "summon_ani.aseprite")]
+    summon: Handle<AnimationData>,
     #[asset(path = "levels.ldtk")]
     ldtk_project: Handle<LdtkProject>,
+    #[asset(path = "sfx/enemy_death.ogg")]
+    sfx_enemy_death: Handle<AudioSource>,
+    #[asset(path = "sfx/summon.ogg")]
+    sfx_summon: Handle<AudioSource>,
+    #[asset(path = "sfx/shoot.ogg")]
+    sfx_shoot: Handle<AudioSource>,
 }
 
 #[derive(Component)]
@@ -109,7 +142,9 @@ struct Vel(Vec2);
 #[derive(Default, Component)]
 struct Door;
 
-fn setup(mut commands: Commands, handles: Res<Handles>) {
+fn setup(mut commands: Commands, handles: Res<Handles>, mut windows: Query<&mut Window>) {
+    windows.single_mut().title = "The girl who climbed the tower".to_owned();
+
     let mut camera = Camera2dBundle {
         transform: Transform::from_xyz(101., 101., 10.),
         ..default()
@@ -130,4 +165,13 @@ fn setup(mut commands: Commands, handles: Res<Handles>) {
             ..default()
         },
     ));
+}
+
+fn check_cleared(
+    mut next_state: ResMut<NextState<RoomState>>,
+    query: Query<(), Or<(With<Enemy>, With<Spawner>)>>,
+) {
+    if query.is_empty() {
+        next_state.set(RoomState::Cleared);
+    }
 }

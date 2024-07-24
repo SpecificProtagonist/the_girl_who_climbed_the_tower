@@ -1,10 +1,15 @@
 use bevy::{math::vec3, prelude::*};
 
-use crate::{CollisionGrid, Handles, Vel};
+use crate::{
+    collision::{self, grid_collision},
+    enemy::{Enemy, HurtIndicator},
+    level::Tiles,
+    Handles, Vel,
+};
 
 const PLAYER_SIZE: f32 = 4.;
-const PLAYER_SPEED: f32 = 55.;
 const BULLET_SIZE: f32 = 1.5;
+const BULLET_DAMAGE: f32 = 1.;
 
 #[derive(Component, Default)]
 pub struct Player {
@@ -28,7 +33,7 @@ pub fn player_movement(
         &mut Handle<Image>,
     )>,
     handles: Res<Handles>,
-    level: Res<CollisionGrid>,
+    tiles: Res<Tiles>,
 ) {
     let Ok((mut pos, mut velocity, mut player, mut sprite, mut tex)) = player.get_single_mut()
     else {
@@ -47,9 +52,20 @@ pub fn player_movement(
     if keyboard_input.pressed(KeyCode::KeyW) {
         dir += Vec2::Y;
     }
-    let vel = dir.normalize_or_zero() * PLAYER_SPEED;
+    const PLAYER_SPEED: f32 = 28.;
+    let vel = if dir == Vec2::ZERO {
+        velocity.0 * (1. - time.delta_seconds() * 15.)
+    } else {
+        dir.normalize_or_zero() * PLAYER_SPEED + 0.4 * velocity.0
+    };
     let attempt_movement = vel * time.delta_seconds();
-    let movement = level.collision(pos.translation.xy(), PLAYER_SIZE, attempt_movement, false);
+    let movement = grid_collision(
+        &tiles,
+        pos.translation.xy(),
+        PLAYER_SIZE,
+        attempt_movement,
+        false,
+    );
     velocity.0 = movement / time.delta_seconds();
     pos.translation += movement.extend(0.);
 
@@ -109,6 +125,14 @@ pub fn player_shoot(
     let vel = Dir2::new(dir + player_vel.0 * 0.005).unwrap() * 180.;
 
     player.shoot_cooldown = 0.4;
+    commands.spawn(AudioBundle {
+        source: handles.sfx_shoot.clone(),
+        settings: PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Despawn,
+            volume: bevy::audio::Volume::new(0.4),
+            ..default()
+        },
+    });
     let mut sprite = Entity::PLACEHOLDER;
     commands
         .spawn(())
@@ -136,14 +160,30 @@ pub fn player_shoot(
 
 pub fn move_bullets(
     mut commands: Commands,
-    level: Res<CollisionGrid>,
+    tiles: Res<Tiles>,
     mut bullets: Query<(Entity, &mut Transform, &Vel), With<Bullet>>,
+    mut enemies: Query<(&Transform, &mut Enemy, &mut HurtIndicator), Without<Bullet>>,
     time: Res<Time>,
 ) {
     for (entity, mut trans, vel) in &mut bullets {
         let pos = trans.translation.xy();
         let movement = vel.0 * time.delta_seconds();
-        if movement != level.collision(pos, BULLET_SIZE, movement, true) {
+        for (enemy_pos, mut enemy, mut hurt) in &mut enemies {
+            if collision::with_ball(
+                enemy_pos.translation.xy(),
+                enemy.size,
+                trans.translation.xy(),
+                BULLET_SIZE,
+                movement,
+            ) != movement
+            {
+                enemy.health -= BULLET_DAMAGE;
+                hurt.last_hit = 0.;
+                commands.entity(entity).despawn_recursive();
+                break;
+            }
+        }
+        if movement != grid_collision(&tiles, pos, BULLET_SIZE, movement, true) {
             commands.entity(entity).despawn_recursive();
         }
         trans.translation += movement.extend(0.);

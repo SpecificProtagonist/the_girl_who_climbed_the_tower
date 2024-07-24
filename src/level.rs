@@ -1,12 +1,12 @@
 use bevy::{
-    math::{ivec2, vec2, vec3},
+    math::{vec2, vec3},
     prelude::*,
     sprite::Anchor,
     utils::HashMap,
 };
 use bevy_ecs_ldtk::{assets::LdtkProject, EntityInstance};
 
-use crate::{collision::CollisionGrid, Door, Handles, Layer};
+use crate::{Door, Handles, Layer};
 
 pub static CELL_SIZE: f32 = 12.;
 static LEVEL_WIDTH: i32 = 12 * CELL_SIZE as i32;
@@ -19,6 +19,40 @@ enum ZLayer {
     Wall,
     Top,
 }
+
+impl ZLayer {
+    fn base_z(self) -> f32 {
+        match self {
+            ZLayer::Subfloor => -2.,
+            ZLayer::Floor => -1.,
+            ZLayer::Wall => 0.,
+            ZLayer::Top => 1.,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd)]
+pub enum Tile {
+    Wall,
+    Floor,
+    Pit,
+}
+
+#[derive(Resource)]
+pub struct Tiles {
+    pub grid: Vec<Tile>,
+}
+
+impl std::ops::Index<IVec2> for Tiles {
+    type Output = Tile;
+
+    fn index(&self, index: IVec2) -> &Self::Output {
+        &self.grid[(index.x + (15 - index.y) * 16) as usize]
+    }
+}
+
+#[derive(Default, Component)]
+pub struct DoorGrate;
 
 pub fn spawn_level(
     mut commands: Commands,
@@ -47,15 +81,17 @@ pub fn spawn_level(
         .find(|l| l.identifier == "Tiles")
         .unwrap();
 
-    commands.insert_resource(CollisionGrid {
-        grid: tile_layer.int_grid_csv.clone(),
+    commands.insert_resource(Tiles {
+        grid: tile_layer
+            .int_grid_csv
+            .iter()
+            .map(|t| match t {
+                1 => Tile::Floor,
+                2 => Tile::Pit,
+                _ => Tile::Wall,
+            })
+            .collect(),
     });
-    // commands.insert_resource(LevelSelection::iid(ldtk_level.iid.clone()));
-    // commands.spawn(LdtkWorldBundle {
-    //     ldtk_handle: handles.ldtk_project.clone(),
-    //     transform: Transform::from_xyz(0., 0., -3.),
-    //     ..Default::default()
-    // });
 
     assert_eq!((tile_layer.c_wid, tile_layer.c_hei), (16, 16));
     assert_eq!(
@@ -118,12 +154,7 @@ pub fn spawn_level(
         let pos = vec2(tile.px.x as f32, CELL_SIZE * 15. - tile.px.y as f32);
         let count = counts.entry(pos.as_ivec2()).or_insert(0);
         *count += 1;
-        let z = match z_layers[tile.t as usize] {
-            ZLayer::Subfloor => -2.,
-            ZLayer::Floor => -1.,
-            ZLayer::Wall => 0.,
-            ZLayer::Top => 1.,
-        } - *count as f32 / 10000.;
+        let z = z_layers[tile.t as usize].base_z() - *count as f32 / 10000.;
         if let Some(&id) = ids.get(&pos.as_ivec2()) {
             if !transparent[id as usize] {
                 continue;
@@ -190,15 +221,22 @@ pub fn spawn_level(
                 },
             ))
             .with_children(|b| {
-                b.spawn(SpriteBundle {
-                    transform: Transform::from_xyz(0., 0., 0.1),
-                    texture: handles.grate.clone(),
-                    sprite: Sprite {
-                        anchor: Anchor::BottomCenter,
+                b.spawn((
+                    DoorGrate,
+                    SpriteBundle {
+                        transform: Transform::from_xyz(0., 0., 0.001),
+                        texture: handles.grate.clone(),
+                        sprite: Sprite {
+                            anchor: Anchor::BottomCenter,
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                });
+                ));
             });
     }
+}
+
+pub fn open_door(mut commands: Commands, query: Query<Entity, With<DoorGrate>>) {
+    commands.entity(query.single()).despawn();
 }
