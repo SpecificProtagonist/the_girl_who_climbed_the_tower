@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
 mod collision;
+mod deathscreen;
 mod enemy;
 mod ldtk;
 mod level;
@@ -13,9 +14,10 @@ use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
+use deathscreen::death_screen;
 use enemy::{floaters, hurt_indicator, spawn_enemies, spawners, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
-use level::{open_door, spawn_level};
+use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
 use music::{music_volume, play_music};
 use player::{move_bullets, player_movement, player_shoot, Player};
 use rand::prelude::*;
@@ -44,32 +46,29 @@ fn main() {
         .add_systems(OnEnter(LoadState::Loaded), setup)
         .add_systems(
             OnEnter(RoomState::Fighting),
-            (
-                spawn_level,
-                spawn_enemies,
-                // |mut next_state: ResMut<NextState<RoomState>>| {
-                //     next_state.set(RoomState::Fighting);
-                // },
-            )
-                .chain(),
+            (spawn_level, spawn_enemies).chain(),
         )
         .add_systems(
             Update,
             (
-                player_movement,
-                player_shoot,
+                (player_movement, player_shoot).run_if(not(in_state(RoomState::PlayerDead))),
                 move_bullets,
                 spawners,
                 floaters,
+                gargoyles,
                 hurt_indicator,
                 check_cleared.run_if(in_state(RoomState::Fighting)),
                 check_exit.run_if(in_state(RoomState::Cleared)),
+                death_screen.run_if(in_state(RoomState::PlayerDead)),
             )
                 .chain()
                 .run_if(in_state(LoadState::Loaded))
                 .run_if(not(in_state(RoomState::Loading))),
         )
-        .add_systems(OnEnter(RoomState::Cleared), open_door)
+        .add_systems(
+            OnEnter(RoomState::Cleared),
+            (open_door, deactivate_gargoyles),
+        )
         .add_systems(Update, (play_music, music_volume))
         .add_systems(PostUpdate, (sync_layer, animations))
         .run();
@@ -81,10 +80,7 @@ enum RoomState {
     Loading,
     Fighting,
     Cleared,
-}
-
-fn default<T: Default>() -> T {
-    Default::default()
+    PlayerDead,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
@@ -96,12 +92,14 @@ enum LoadState {
 
 #[derive(AssetCollection, Resource)]
 struct Handles {
+    #[asset(path = "levels.ldtk")]
+    ldtk_project: Handle<LdtkProject>,
+
     #[asset(texture_atlas_layout(tile_size_x = 12, tile_size_y = 12, columns = 12, rows = 12))]
     layout: Handle<TextureAtlasLayout>,
     #[asset(path = "tiles.aseprite")]
     tiles: Handle<Image>,
-    #[asset(path = "test.aseprite")]
-    _test: Handle<Image>,
+
     #[asset(
         paths("player_down_0.aseprite", "player_down_1.aseprite"),
         collection(typed)
@@ -119,6 +117,10 @@ struct Handles {
     player_side: Vec<Handle<Image>>,
     #[asset(path = "bullet.aseprite")]
     bullet: Handle<Image>,
+    #[asset(path = "gargoyle.aseprite")]
+    gargoyle: Handle<Image>,
+    #[asset(path = "gargoyle_inactive.aseprite")]
+    gargoyle_inactive: Handle<Image>,
     #[asset(path = "enemy.aseprite")]
     enemy: Handle<Image>,
     #[asset(path = "enemy_summon.aseprite")]
@@ -129,16 +131,25 @@ struct Handles {
     grate: Handle<Image>,
     #[asset(path = "cycle_indicator.aseprite")]
     cycle_indicator: Handle<Image>,
+    #[asset(path = "ouroboros.aseprite")]
+    ouroboros: Handle<Image>,
+    #[asset(path = "black.aseprite")]
+    black: Handle<Image>,
+    #[asset(path = "key_enter.aseprite")]
+    key_enter: Handle<Image>,
+
     #[asset(path = "summon_ani.aseprite")]
     summon: Handle<AnimationData>,
-    #[asset(path = "levels.ldtk")]
-    ldtk_project: Handle<LdtkProject>,
+
     #[asset(path = "sfx/enemy_death.ogg")]
     sfx_enemy_death: Handle<AudioSource>,
     #[asset(path = "sfx/summon.ogg")]
     sfx_summon: Handle<AudioSource>,
     #[asset(path = "sfx/shoot.ogg")]
     sfx_shoot: Handle<AudioSource>,
+
+    #[asset(path = "bitmgothic.ttf")]
+    font_score: Handle<Font>,
 }
 
 #[derive(Component)]
@@ -158,6 +169,9 @@ struct Vel(Vec2);
 
 #[derive(Default, Component)]
 struct Door;
+
+#[derive(Default, Component)]
+struct Gargoyle;
 
 fn setup(
     mut commands: Commands,
@@ -216,6 +230,7 @@ fn check_exit(
     cycle.current_room += 1;
     if cycle.current_room == cycle.rooms.len() {
         cycle.current_room = 0;
+        cycle.cycle += 1;
         let room = cycle.rooms.choose_mut(&mut thread_rng()).unwrap();
         if room.difficulty < room.max_difficulty {
             room.difficulty += 1;
@@ -235,6 +250,7 @@ struct Room {
 struct Cycle {
     rooms: Vec<Room>,
     current_room: usize,
+    cycle: i32,
 }
 
 impl Cycle {
@@ -258,6 +274,7 @@ impl Cycle {
         Self {
             rooms,
             current_room: 0,
+            cycle: 0,
         }
     }
 }

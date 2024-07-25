@@ -1,5 +1,5 @@
 use bevy::{
-    math::{ivec2, vec2},
+    math::{ivec2, vec2, vec3},
     prelude::*,
 };
 use rand::prelude::*;
@@ -8,7 +8,8 @@ use crate::{
     aseprite::Animation,
     collision::grid_collision,
     level::{Tile, Tiles, CELL_SIZE},
-    Clearable, Handles, Layer, Vel,
+    player::{Bullet, Player},
+    Clearable, Cycle, Handles, Layer, Vel,
 };
 
 static FLOATER_SIZE: f32 = 5.;
@@ -50,7 +51,12 @@ impl Spawner {
     }
 }
 
-pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>) {
+pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>, cycle: Res<Cycle>) {
+    // Don't spawn enemies in the very first room
+    if (cycle.current_room == 0) & (cycle.cycle == 0) {
+        return;
+    }
+
     let mut floor = Vec::new();
     for x in 0..16 {
         for y in 0..16 {
@@ -64,7 +70,7 @@ pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>) {
             }
         }
     }
-    for i in 0..2 {
+    for i in 0..4 + cycle.cycle {
         let delay = 2. + 0.3 * i as f32;
         let tile_center =
             (floor.choose(&mut thread_rng()).unwrap().as_vec2() + vec2(0.5, 0.5)) * CELL_SIZE;
@@ -172,7 +178,8 @@ pub fn spawners(
 pub fn floaters(
     mut commands: Commands,
     mut floaters: Query<(Entity, &mut Vel, &mut Floater, &Enemy)>,
-    mut transform: Query<&mut Transform, With<Floater>>,
+    mut transform: Query<&mut Transform, (With<Floater>, Without<Player>)>,
+    player: Query<&Transform, With<Player>>,
     tiles: Res<Tiles>,
     time: Res<Time>,
     handles: Res<Handles>,
@@ -206,6 +213,39 @@ pub fn floaters(
                 vel.0 += direction * (2. * FLOATER_SIZE - distance).max(0.) / 2.4;
             }
         }
+
+        if (floater.movement_timer - time.delta_seconds()..floater.movement_timer).contains(&3.)
+            & thread_rng().gen_bool(0.5)
+        {
+            let dir = (player.single().translation.xy() - pos).normalize();
+            commands
+                .spawn(())
+                .with_children(|b| {
+                    b.spawn(SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::hsv(57., 0.78, 1.),
+                            ..default()
+                        },
+                        texture: handles.bullet.clone(),
+                        transform: Transform {
+                            translation: vec3(0., 9., 0.),
+                            rotation: Quat::from_rotation_z(dir.to_angle()),
+                            ..default()
+                        },
+                        ..default()
+                    });
+                })
+                .insert((
+                    Layer(0.0),
+                    Transform::from_translation((pos + dir * 5.).extend(0.)),
+                    Clearable,
+                    Vel(dir * 80.),
+                    Bullet { friendly: false },
+                    GlobalTransform::default(),
+                    InheritedVisibility::default(),
+                ));
+        }
+
         if floater.movement_timer > 4. {
             floater.movement_timer = 0.
         }

@@ -4,7 +4,7 @@ use crate::{
     collision::{self, grid_collision},
     enemy::{Enemy, HurtIndicator},
     level::Tiles,
-    Clearable, Handles, Vel,
+    Clearable, Handles, Layer, RoomState, Vel,
 };
 
 const PLAYER_SIZE: f32 = 4.;
@@ -19,7 +19,7 @@ pub struct Player {
 
 #[derive(Component)]
 pub struct Bullet {
-    _sprite: Entity,
+    pub friendly: bool,
 }
 
 pub fn player_movement(
@@ -133,27 +133,25 @@ pub fn player_shoot(
             ..default()
         },
     });
-    let mut sprite = Entity::PLACEHOLDER;
     commands
         .spawn(())
         .with_children(|b| {
-            sprite = b
-                .spawn((SpriteBundle {
-                    texture: handles.bullet.clone(),
-                    transform: Transform {
-                        translation: vec3(0., 9., 0.),
-                        rotation: Quat::from_rotation_z(dir.to_angle()),
-                        ..default()
-                    },
+            b.spawn(SpriteBundle {
+                texture: handles.bullet.clone(),
+                transform: Transform {
+                    translation: vec3(0., 9., 0.),
+                    rotation: Quat::from_rotation_z(dir.to_angle()),
                     ..default()
-                },))
-                .id();
+                },
+                ..default()
+            });
         })
         .insert((
+            Layer(0.0),
             Transform::from_translation(pos.translation + dir.extend(0.) * 5.),
             Clearable,
             Vel(vel),
-            Bullet { _sprite: sprite },
+            Bullet { friendly: true },
             GlobalTransform::default(),
             InheritedVisibility::default(),
         ));
@@ -162,27 +160,40 @@ pub fn player_shoot(
 pub fn move_bullets(
     mut commands: Commands,
     tiles: Res<Tiles>,
-    mut bullets: Query<(Entity, &mut Transform, &Vel), With<Bullet>>,
+    mut bullets: Query<(Entity, &mut Transform, &Vel, &Bullet)>,
     mut enemies: Query<(&Transform, &mut Enemy, &mut HurtIndicator), Without<Bullet>>,
+    player: Query<&Transform, (With<Player>, Without<Bullet>)>,
     time: Res<Time>,
+    mut next: ResMut<NextState<RoomState>>,
 ) {
-    for (entity, mut trans, vel) in &mut bullets {
+    for (entity, mut trans, vel, bullet) in &mut bullets {
         let pos = trans.translation.xy();
         let movement = vel.0 * time.delta_seconds();
-        for (enemy_pos, mut enemy, mut hurt) in &mut enemies {
-            if collision::with_ball(
-                enemy_pos.translation.xy(),
-                enemy.size,
-                trans.translation.xy(),
-                BULLET_SIZE,
-                movement,
-            ) != movement
-            {
-                enemy.health -= BULLET_DAMAGE;
-                hurt.last_hit = 0.;
-                commands.entity(entity).despawn_recursive();
-                break;
+        if bullet.friendly {
+            for (enemy_pos, mut enemy, mut hurt) in &mut enemies {
+                if collision::with_ball(
+                    enemy_pos.translation.xy(),
+                    enemy.size,
+                    trans.translation.xy(),
+                    BULLET_SIZE,
+                    movement,
+                ) != movement
+                {
+                    enemy.health -= BULLET_DAMAGE;
+                    hurt.last_hit = 0.;
+                    commands.entity(entity).despawn_recursive();
+                    break;
+                }
             }
+        } else if collision::with_ball(
+            player.single().translation.xy(),
+            PLAYER_SIZE,
+            trans.translation.xy(),
+            BULLET_SIZE,
+            movement,
+        ) != movement
+        {
+            next.set(RoomState::PlayerDead);
         }
         if movement != grid_collision(&tiles, pos, BULLET_SIZE, movement, true) {
             commands.entity(entity).despawn_recursive();
