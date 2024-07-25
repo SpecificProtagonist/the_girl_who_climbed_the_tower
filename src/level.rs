@@ -9,8 +9,8 @@ use bevy::{
 
 use crate::{
     ldtk::{EntityInstance, LdtkProject},
-    player::Player,
-    Clearable, Cycle, Door, Handles, Layer, Vel,
+    player::{Bullet, Player},
+    Clearable, Cycle, Door, Gargoyle, Handles, Layer, Vel,
 };
 
 pub static CELL_SIZE: f32 = 12.;
@@ -65,7 +65,7 @@ pub fn spawn_level(
     handles: Res<Handles>,
     cycle: Res<Cycle>,
 ) {
-    let cycle_progress = cycle.current_room as f32 / cycle.rooms.len() as f32;
+    let cycle_progress = cycle.current_room as f32 / cycle.rooms.len() as f32 + 0.1;
     let ldtk_level = ldtk
         .levels
         .iter()
@@ -197,13 +197,7 @@ pub fn spawn_level(
         .find(|l| l.identifier == "Entities")
         .unwrap();
 
-    let px_to_world = |entity: &EntityInstance, vertical: bool| {
-        let mut y = 192. - entity.px.y as f32;
-        if vertical {
-            y -= entity.height as f32 / 2.
-        }
-        vec2(entity.px.x as f32, y)
-    };
+    let px_to_world = |entity: &EntityInstance| vec2(entity.px.x as f32, 192. - entity.px.y as f32);
     for entity in entity_layer
         .entity_instances
         .iter()
@@ -215,7 +209,9 @@ pub fn spawn_level(
                 Clearable,
                 Layer(0.),
                 SpriteBundle {
-                    transform: Transform::from_translation(px_to_world(entity, true).extend(0.)),
+                    transform: Transform::from_translation(
+                        px_to_world(entity).extend(0.) - Vec3::Y * 12.,
+                    ),
                     texture: handles.door.clone(),
                     sprite: Sprite {
                         anchor: Anchor::BottomCenter,
@@ -255,6 +251,29 @@ pub fn spawn_level(
     for entity in entity_layer
         .entity_instances
         .iter()
+        .filter(|e| e.identifier == "Gargoyle")
+    {
+        commands.spawn((
+            Gargoyle,
+            Clearable,
+            Layer(0.),
+            SpriteBundle {
+                transform: Transform::from_translation(
+                    px_to_world(entity).extend(0.) - Vec3::Y * 4.,
+                ),
+                texture: handles.gargoyle.clone(),
+                sprite: Sprite {
+                    anchor: Anchor::BottomCenter,
+                    ..default()
+                },
+                ..default()
+            },
+        ));
+    }
+
+    for entity in entity_layer
+        .entity_instances
+        .iter()
         .filter(|e| e.identifier == "Player")
     {
         commands.spawn((
@@ -263,7 +282,7 @@ pub fn spawn_level(
             Clearable,
             Vel::default(),
             SpriteBundle {
-                transform: Transform::from_translation(px_to_world(entity, false).extend(0.)),
+                transform: Transform::from_translation(px_to_world(entity).extend(0.)),
                 sprite: Sprite {
                     anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
                     ..default()
@@ -278,5 +297,55 @@ pub fn spawn_level(
 pub fn open_door(mut commands: Commands, query: Query<Entity, With<DeleteOnClear>>) {
     for entity in &query {
         commands.entity(entity).despawn_recursive();
+    }
+}
+
+pub fn deactivate_gargoyles(
+    mut query: Query<&mut Handle<Image>, With<Gargoyle>>,
+    handles: Res<Handles>,
+) {
+    for mut tex in &mut query {
+        *tex = handles.gargoyle_inactive.clone();
+    }
+}
+
+pub fn gargoyles(
+    mut commands: Commands,
+    gargoyles: Query<&Transform, With<Gargoyle>>,
+    handles: Res<Handles>,
+    mut cooldown: Local<f32>,
+    time: Res<Time>,
+) {
+    *cooldown -= time.delta_seconds();
+    if *cooldown < 0. {
+        *cooldown = 3.;
+        for trans in &gargoyles {
+            commands
+                .spawn(())
+                .with_children(|b| {
+                    b.spawn(SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::hsv(57., 0.78, 1.),
+                            ..default()
+                        },
+                        texture: handles.bullet.clone(),
+                        transform: Transform {
+                            translation: vec3(0., 9., 0.),
+                            rotation: Quat::from_rotation_z(0.5 * -PI),
+                            ..default()
+                        },
+                        ..default()
+                    });
+                })
+                .insert((
+                    Layer(0.0),
+                    *trans,
+                    Clearable,
+                    Vel(vec2(0., -70.)),
+                    Bullet { friendly: false },
+                    GlobalTransform::default(),
+                    InheritedVisibility::default(),
+                ));
+        }
     }
 }
