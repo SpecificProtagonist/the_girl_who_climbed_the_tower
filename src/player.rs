@@ -170,15 +170,25 @@ pub struct HurtPlayer;
 
 pub fn player_hurt(
     _: Trigger<HurtPlayer>,
+    mut commands: Commands,
     mut player: ResMut<Player>,
     state: Res<State<RoomState>>,
     mut next: ResMut<NextState<RoomState>>,
+    handles: Res<Handles>,
 ) {
     if (player.invulnerable > 0.) | (*state == RoomState::PlayerDead) {
         return;
     }
     player.invulnerable = 1.;
     player.health -= 1;
+    commands.spawn(AudioBundle {
+        source: handles.sfx_hurt.clone(),
+        settings: PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Despawn,
+            volume: bevy::audio::Volume::new(0.4),
+            ..default()
+        },
+    });
     if player.health <= 0 {
         next.set(RoomState::PlayerDead);
     }

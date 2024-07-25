@@ -17,7 +17,7 @@ use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
 use bullet::move_bullets;
 use deathscreen::death_screen;
-use enemy::{floaters, spawn_enemies, spawners, Enemy, Spawner};
+use enemy::{floater_a, floater_b, spawn_enemies, spawners, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
 use music::{music_volume, play_music};
@@ -59,7 +59,8 @@ fn main() {
                 player_health,
                 move_bullets,
                 spawners,
-                floaters,
+                floater_a,
+                floater_b,
                 gargoyles,
                 check_cleared.run_if(in_state(RoomState::Fighting)),
                 check_exit.run_if(in_state(RoomState::Cleared)),
@@ -125,10 +126,12 @@ struct Handles {
     gargoyle: Handle<Image>,
     #[asset(path = "gargoyle_inactive.aseprite")]
     gargoyle_inactive: Handle<Image>,
-    #[asset(path = "enemy.aseprite")]
-    enemy: Handle<Image>,
-    #[asset(path = "enemy_summon.aseprite")]
-    enemy_summon: Handle<Image>,
+    #[asset(path = "floater_a.aseprite")]
+    floater_a: Handle<Image>,
+    #[asset(path = "floater_b.aseprite")]
+    floater_b: Handle<Image>,
+    #[asset(path = "floater_occluded.aseprite")]
+    floater_occluded: Handle<Image>,
     #[asset(path = "door.aseprite")]
     door: Handle<Image>,
     #[asset(path = "grate_circle.aseprite")]
@@ -153,6 +156,8 @@ struct Handles {
     sfx_summon: Handle<AudioSource>,
     #[asset(path = "sfx/shoot.ogg")]
     sfx_shoot: Handle<AudioSource>,
+    #[asset(path = "sfx/hurt.ogg")]
+    sfx_hurt: Handle<AudioSource>,
 
     #[asset(path = "bitmgothic.ttf")]
     font_score: Handle<Font>,
