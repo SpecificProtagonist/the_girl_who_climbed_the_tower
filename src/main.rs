@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 mod aseprite;
+mod bullet;
 mod collision;
 mod deathscreen;
 mod enemy;
@@ -14,12 +15,13 @@ use bevy::prelude::*;
 use bevy::render::camera::ScalingMode;
 use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
+use bullet::move_bullets;
 use deathscreen::death_screen;
-use enemy::{floaters, hurt_indicator, spawn_enemies, spawners, Enemy, Spawner};
+use enemy::{floaters, spawn_enemies, spawners, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
 use music::{music_volume, play_music};
-use player::{move_bullets, player_movement, player_shoot, Player};
+use player::{player_health, player_hurt, player_movement, player_shoot, Player, PlayerEntity};
 use rand::prelude::*;
 
 fn main() {
@@ -43,20 +45,22 @@ fn main() {
         .init_asset::<AnimationData>()
         .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
+        .init_resource::<Player>()
         .add_systems(OnEnter(LoadState::Loaded), setup)
         .add_systems(
             OnEnter(RoomState::Fighting),
             (spawn_level, spawn_enemies).chain(),
         )
+        .observe(player_hurt)
         .add_systems(
             Update,
             (
                 (player_movement, player_shoot).run_if(not(in_state(RoomState::PlayerDead))),
+                player_health,
                 move_bullets,
                 spawners,
                 floaters,
                 gargoyles,
-                hurt_indicator,
                 check_cleared.run_if(in_state(RoomState::Fighting)),
                 check_exit.run_if(in_state(RoomState::Cleared)),
                 death_screen.run_if(in_state(RoomState::PlayerDead)),
@@ -70,7 +74,7 @@ fn main() {
             (open_door, deactivate_gargoyles),
         )
         .add_systems(Update, (play_music, music_volume))
-        .add_systems(PostUpdate, (sync_layer, animations))
+        .add_systems(PostUpdate, (sync_layer, animations, hurt_indicator))
         .run();
 }
 
@@ -135,6 +139,8 @@ struct Handles {
     ouroboros: Handle<Image>,
     #[asset(path = "black.aseprite")]
     black: Handle<Image>,
+    #[asset(path = "player_hurt.aseprite")]
+    player_hurt: Handle<Image>,
     #[asset(path = "key_enter.aseprite")]
     key_enter: Handle<Image>,
 
@@ -207,7 +213,7 @@ fn check_cleared(
 
 fn check_exit(
     mut commands: Commands,
-    player: Query<&Transform, With<Player>>,
+    player: Query<&Transform, With<PlayerEntity>>,
     door: Query<&Transform, With<Door>>,
     clearable: Query<Entity, With<Clearable>>,
     mut cycle: ResMut<Cycle>,
@@ -276,5 +282,23 @@ impl Cycle {
             current_room: 0,
             cycle: 0,
         }
+    }
+}
+
+#[derive(Component)]
+pub struct Hurtable {
+    pub last_hit: f32,
+    pub indicator: Entity,
+}
+
+pub fn hurt_indicator(
+    mut query: Query<&mut Hurtable>,
+    mut sprites: Query<&mut Sprite>,
+    time: Res<Time>,
+) {
+    for mut hurt in &mut query {
+        let mut sprite = sprites.get_mut(hurt.indicator).unwrap();
+        sprite.color = Color::srgba(1., 1., 1., (2. - 8. * hurt.last_hit).clamp(0., 1.));
+        hurt.last_hit += time.delta_seconds();
     }
 }

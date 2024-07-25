@@ -1,12 +1,15 @@
 use bevy::{math::vec3, prelude::*};
 
-use crate::{ldtk::LdtkProject, Clearable, Cycle, Handles, RoomState};
+use crate::{ldtk::LdtkProject, player::Player, Clearable, Cycle, Handles, RoomState};
 
 #[derive(Resource)]
 pub struct DeathTimer(f32);
 
 #[derive(Component)]
 pub struct Background;
+
+#[derive(Component)]
+pub struct RespawnHint;
 
 #[derive(Component)]
 pub struct DespawnOnRespawn;
@@ -23,6 +26,7 @@ pub fn death_screen(
     cycle: Res<Cycle>,
     ldtk: Res<LdtkProject>,
     clearable: Query<Entity, With<Clearable>>,
+    mut respawn_hint: Query<&mut Sprite, (With<RespawnHint>, Without<Background>)>,
 ) {
     let Some(mut timer) = timer else {
         commands.insert_resource(DeathTimer(0.));
@@ -55,7 +59,7 @@ pub fn death_screen(
     else {
         panic!()
     };
-    background.alpha = (background.alpha + time.delta_seconds() * 0.2).min(1.);
+    background.alpha = (timer.0 * 0.2).powf(0.3).min(1.);
 
     if (timer.0 - time.delta_seconds()..timer.0).contains(&3.) {
         commands.spawn((
@@ -94,15 +98,24 @@ pub fn death_screen(
         ));
     }
 
-    if (timer.0 - time.delta_seconds()..timer.0).contains(&6.) {
+    if (timer.0 - time.delta_seconds()..timer.0).contains(&10.) {
         commands.spawn((
             DespawnOnRespawn,
+            RespawnHint,
             SpriteBundle {
                 texture: handles.key_enter.clone(),
                 transform: Transform::from_xyz(101., 40., 11.),
+                sprite: Sprite {
+                    color: Color::srgba(0., 0., 0., 0.),
+                    ..default()
+                },
                 ..default()
             },
         ));
+    }
+
+    if let Ok(mut sprite) = respawn_hint.get_single_mut() {
+        sprite.color = Color::srgba(1., 1., 1., time.elapsed_seconds().sin() * 0.5 + 0.5);
     }
 
     if (timer.0 > 3.) & keyboard_input.just_pressed(KeyCode::Enter) {
@@ -112,6 +125,7 @@ pub fn death_screen(
         commands.remove_resource::<DeathTimer>();
         // Reset
         commands.insert_resource(Cycle::new(&ldtk));
+        commands.insert_resource(Player::default());
         // Clear room
         for entity in &clearable {
             commands.entity(entity).despawn_recursive()

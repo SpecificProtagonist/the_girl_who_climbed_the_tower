@@ -13,7 +13,7 @@ pub fn play_music(mut commands: Commands, query: Query<&Music>, asset_server: Re
                     .load(format!("music/track_{}.ogg", thread_rng().gen_range(1..=7))),
                 settings: PlaybackSettings {
                     mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: bevy::audio::Volume::new(0.25),
+                    volume: bevy::audio::Volume::new(0.20),
                     ..default()
                 },
             },

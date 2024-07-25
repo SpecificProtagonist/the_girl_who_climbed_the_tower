@@ -1,42 +1,49 @@
 use bevy::{math::vec3, prelude::*};
 
 use crate::{
-    collision::{self, grid_collision},
-    enemy::{Enemy, HurtIndicator},
-    level::Tiles,
-    Clearable, Handles, Layer, RoomState, Vel,
+    bullet::Bullet, collision::grid_collision, level::Tiles, Clearable, Handles, Layer, RoomState,
+    Vel,
 };
 
-const PLAYER_SIZE: f32 = 4.;
-const BULLET_SIZE: f32 = 1.5;
-const BULLET_DAMAGE: f32 = 1.;
+pub const PLAYER_SIZE: f32 = 4.;
 
-#[derive(Component, Default)]
+#[derive(Component)]
+pub struct PlayerHurtFlash;
+
+#[derive(Component)]
+pub struct PlayerEntity;
+
+#[derive(Resource)]
 pub struct Player {
     walk_ani: f32,
     shoot_cooldown: f32,
+    pub health: i32,
+    pub invulnerable: f32,
 }
 
-#[derive(Component)]
-pub struct Bullet {
-    pub friendly: bool,
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            walk_ani: 0.,
+            shoot_cooldown: 0.,
+            health: 3,
+            invulnerable: 0.,
+        }
+    }
 }
 
 pub fn player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut player: Query<(
-        &mut Transform,
-        &mut Vel,
-        &mut Player,
-        &mut Sprite,
-        &mut Handle<Image>,
-    )>,
+    mut player_entity: Query<
+        (&mut Transform, &mut Vel, &mut Sprite, &mut Handle<Image>),
+        With<PlayerEntity>,
+    >,
+    mut player: ResMut<Player>,
     handles: Res<Handles>,
     tiles: Res<Tiles>,
 ) {
-    let Ok((mut pos, mut velocity, mut player, mut sprite, mut tex)) = player.get_single_mut()
-    else {
+    let Ok((mut pos, mut velocity, mut sprite, mut tex)) = player_entity.get_single_mut() else {
         return;
     };
     let mut dir = Vec2::ZERO;
@@ -93,10 +100,11 @@ pub fn player_shoot(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut player: Query<(&Transform, &Vel, &mut Player)>,
+    player_entity: Query<(&Transform, &Vel), With<PlayerEntity>>,
+    mut player: ResMut<Player>,
     handles: Res<Handles>,
 ) {
-    let Ok((pos, player_vel, mut player)) = player.get_single_mut() else {
+    let Ok((pos, player_vel)) = player_entity.get_single() else {
         return;
     };
     player.shoot_cooldown -= time.delta_seconds();
@@ -157,47 +165,31 @@ pub fn player_shoot(
         ));
 }
 
-pub fn move_bullets(
-    mut commands: Commands,
-    tiles: Res<Tiles>,
-    mut bullets: Query<(Entity, &mut Transform, &Vel, &Bullet)>,
-    mut enemies: Query<(&Transform, &mut Enemy, &mut HurtIndicator), Without<Bullet>>,
-    player: Query<&Transform, (With<Player>, Without<Bullet>)>,
-    time: Res<Time>,
+#[derive(Event)]
+pub struct HurtPlayer;
+
+pub fn player_hurt(
+    _: Trigger<HurtPlayer>,
+    mut player: ResMut<Player>,
+    state: Res<State<RoomState>>,
     mut next: ResMut<NextState<RoomState>>,
 ) {
-    for (entity, mut trans, vel, bullet) in &mut bullets {
-        let pos = trans.translation.xy();
-        let movement = vel.0 * time.delta_seconds();
-        if bullet.friendly {
-            for (enemy_pos, mut enemy, mut hurt) in &mut enemies {
-                if collision::with_ball(
-                    enemy_pos.translation.xy(),
-                    enemy.size,
-                    trans.translation.xy(),
-                    BULLET_SIZE,
-                    movement,
-                ) != movement
-                {
-                    enemy.health -= BULLET_DAMAGE;
-                    hurt.last_hit = 0.;
-                    commands.entity(entity).despawn_recursive();
-                    break;
-                }
-            }
-        } else if collision::with_ball(
-            player.single().translation.xy(),
-            PLAYER_SIZE,
-            trans.translation.xy(),
-            BULLET_SIZE,
-            movement,
-        ) != movement
-        {
-            next.set(RoomState::PlayerDead);
-        }
-        if movement != grid_collision(&tiles, pos, BULLET_SIZE, movement, true) {
-            commands.entity(entity).despawn_recursive();
-        }
-        trans.translation += movement.extend(0.);
+    if (player.invulnerable > 0.) | (*state == RoomState::PlayerDead) {
+        return;
     }
+    player.invulnerable = 1.;
+    player.health -= 1;
+    if player.health <= 0 {
+        next.set(RoomState::PlayerDead);
+    }
+}
+
+pub fn player_health(
+    mut player: ResMut<Player>,
+    mut flash: Query<&mut Sprite, With<PlayerHurtFlash>>,
+    time: Res<Time>,
+) {
+    player.invulnerable -= time.delta_seconds();
+    flash.single_mut().color =
+        Color::srgba(1., 1., 1., (player.invulnerable * 15. - 14.).clamp(0., 1.0));
 }

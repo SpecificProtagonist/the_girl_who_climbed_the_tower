@@ -6,10 +6,11 @@ use rand::prelude::*;
 
 use crate::{
     aseprite::Animation,
+    bullet::Bullet,
     collision::grid_collision,
     level::{Tile, Tiles, CELL_SIZE},
-    player::{Bullet, Player},
-    Clearable, Cycle, Handles, Layer, Vel,
+    player::{HurtPlayer, PlayerEntity, PLAYER_SIZE},
+    Clearable, Cycle, Handles, Hurtable, Layer, Vel,
 };
 
 static FLOATER_SIZE: f32 = 5.;
@@ -18,12 +19,6 @@ static FLOATER_SIZE: f32 = 5.;
 pub struct Enemy {
     pub health: f32,
     pub size: f32,
-}
-
-#[derive(Component)]
-pub struct HurtIndicator {
-    pub last_hit: f32,
-    pub occluder: Entity,
 }
 
 #[derive(Component)]
@@ -166,9 +161,9 @@ pub fn spawners(
                     health: 3.,
                     size: FLOATER_SIZE,
                 },
-                HurtIndicator {
+                Hurtable {
                     last_hit: f32::INFINITY,
-                    occluder: spawner.summon_occluder,
+                    indicator: spawner.summon_occluder,
                 },
             ));
         }
@@ -178,8 +173,8 @@ pub fn spawners(
 pub fn floaters(
     mut commands: Commands,
     mut floaters: Query<(Entity, &mut Vel, &mut Floater, &Enemy)>,
-    mut transform: Query<&mut Transform, (With<Floater>, Without<Player>)>,
-    player: Query<&Transform, With<Player>>,
+    mut transform: Query<&mut Transform, (With<Floater>, Without<PlayerEntity>)>,
+    player: Query<&Transform, With<PlayerEntity>>,
     tiles: Res<Tiles>,
     time: Res<Time>,
     handles: Res<Handles>,
@@ -189,7 +184,9 @@ pub fn floaters(
         let mut trans = transform.get_mut(entity).unwrap();
         if floater.movement_timer == 0. {
             let mut dir = Dir2::from_rng(&mut thread_rng()).as_vec2();
-            if (trans.translation.y + dir.y * 24. < 10.) & (dir.y < 0.) {
+            if ((trans.translation.y + dir.y * 24. < 10.) & (dir.y < 0.))
+                | ((trans.translation.y + dir.y * 24. > 180.) & (dir.y > 0.))
+            {
                 dir.y *= -1.
             }
             vel.0 = dir;
@@ -214,10 +211,15 @@ pub fn floaters(
             }
         }
 
+        let player_pos = player.single();
+        if player_pos.translation.xy().distance(pos) < FLOATER_SIZE + PLAYER_SIZE {
+            commands.trigger(HurtPlayer);
+        }
+
         if (floater.movement_timer - time.delta_seconds()..floater.movement_timer).contains(&3.)
             & thread_rng().gen_bool(0.5)
         {
-            let dir = (player.single().translation.xy() - pos).normalize();
+            let dir = (player_pos.translation.xy() - pos).normalize();
             commands
                 .spawn(())
                 .with_children(|b| {
@@ -261,17 +263,5 @@ pub fn floaters(
                 },
             });
         }
-    }
-}
-
-pub fn hurt_indicator(
-    mut query: Query<&mut HurtIndicator>,
-    mut sprites: Query<&mut Sprite>,
-    time: Res<Time>,
-) {
-    for mut hurt in &mut query {
-        let mut sprite = sprites.get_mut(hurt.occluder).unwrap();
-        sprite.color = Color::srgba(1., 1., 1., (2. - 8. * hurt.last_hit).clamp(0., 1.));
-        hurt.last_hit += time.delta_seconds();
     }
 }

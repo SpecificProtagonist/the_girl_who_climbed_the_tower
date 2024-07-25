@@ -8,8 +8,9 @@ use bevy::{
 };
 
 use crate::{
+    bullet::Bullet,
     ldtk::{EntityInstance, LdtkProject},
-    player::{Bullet, Player},
+    player::{PlayerEntity, PlayerHurtFlash},
     Clearable, Cycle, Door, Gargoyle, Handles, Layer, Vel,
 };
 
@@ -276,21 +277,39 @@ pub fn spawn_level(
         .iter()
         .filter(|e| e.identifier == "Player")
     {
-        commands.spawn((
-            Player::default(),
-            Layer(0.0),
-            Clearable,
-            Vel::default(),
-            SpriteBundle {
-                transform: Transform::from_translation(px_to_world(entity).extend(0.)),
-                sprite: Sprite {
-                    anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
+        commands
+            .spawn((
+                PlayerEntity,
+                Layer(0.0),
+                Clearable,
+                Vel::default(),
+                SpriteBundle {
+                    transform: Transform::from_translation(px_to_world(entity).extend(0.)),
+                    sprite: Sprite {
+                        anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
+                        ..default()
+                    },
+                    texture: handles.player_down[0].clone(),
                     ..default()
                 },
-                texture: handles.player_down[0].clone(),
-                ..default()
-            },
-        ));
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    PlayerHurtFlash,
+                    SpriteBundle {
+                        texture: handles.player_hurt.clone(),
+                        transform: Transform {
+                            translation: vec3(0., 6., -0.001),
+                            ..default()
+                        },
+                        sprite: Sprite {
+                            color: Color::srgba(1., 1., 1., 0.),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                ));
+            });
     }
 }
 
