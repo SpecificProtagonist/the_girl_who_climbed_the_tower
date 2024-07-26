@@ -265,7 +265,7 @@ pub fn floater_a(
         }
 
         if (floater.movement_timer - time.delta_seconds()..floater.movement_timer).contains(&3.)
-            & thread_rng().gen_bool(0.5)
+            & thread_rng().gen_bool(0.7)
         {
             let dir = (player_pos.translation.xy() - pos).normalize();
             commands

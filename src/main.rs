@@ -21,7 +21,10 @@ use enemy::{floater_a, floater_b, spawn_enemies, spawners, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
 use music::{music_volume, play_music};
-use player::{player_health, player_hurt, player_movement, player_shoot, Player, PlayerEntity};
+use player::{
+    player_health, player_hearts_init, player_hurt, player_movement, player_shoot, Player,
+    PlayerEntity,
+};
 use rand::prelude::*;
 
 fn main() {
@@ -46,7 +49,7 @@ fn main() {
         .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<Player>()
-        .add_systems(OnEnter(LoadState::Loaded), setup)
+        .add_systems(OnEnter(LoadState::Loaded), (setup, player_hearts_init))
         .add_systems(
             OnEnter(RoomState::Fighting),
             (spawn_level, spawn_enemies).chain(),
@@ -138,6 +141,8 @@ struct Handles {
     grate: Handle<Image>,
     #[asset(path = "cycle_indicator.aseprite")]
     cycle_indicator: Handle<Image>,
+    #[asset(path = "heart.aseprite")]
+    heart: Handle<Image>,
     #[asset(path = "ouroboros.aseprite")]
     ouroboros: Handle<Image>,
     #[asset(path = "black.aseprite")]
@@ -158,6 +163,10 @@ struct Handles {
     sfx_shoot: Handle<AudioSource>,
     #[asset(path = "sfx/hurt.ogg")]
     sfx_hurt: Handle<AudioSource>,
+    #[asset(path = "sfx/death.ogg")]
+    sfx_death: Handle<AudioSource>,
+    #[asset(path = "sfx/clear.ogg")]
+    sfx_clear: Handle<AudioSource>,
 
     #[asset(path = "bitmgothic.ttf")]
     font_score: Handle<Font>,
@@ -208,10 +217,24 @@ fn setup(
 }
 
 fn check_cleared(
+    mut commands: Commands,
     mut next_state: ResMut<NextState<RoomState>>,
     query: Query<(), Or<(With<Enemy>, With<Spawner>)>>,
+    handles: Res<Handles>,
+    cycle: Res<Cycle>,
 ) {
     if query.is_empty() {
+        if (cycle.current_room != 0) | (cycle.cycle != 0) {
+            commands.spawn(AudioBundle {
+                source: handles.sfx_clear.clone(),
+                settings: PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Despawn,
+                    volume: bevy::audio::Volume::new(0.2),
+                    ..default()
+                },
+            });
+        }
+
         next_state.set(RoomState::Cleared);
     }
 }

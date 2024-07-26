@@ -191,15 +191,47 @@ pub fn player_hurt(
     });
     if player.health <= 0 {
         next.set(RoomState::PlayerDead);
+        commands.spawn(AudioBundle {
+            source: handles.sfx_death.clone(),
+            settings: PlaybackSettings {
+                mode: bevy::audio::PlaybackMode::Despawn,
+                volume: bevy::audio::Volume::new(0.2),
+                ..default()
+            },
+        });
     }
 }
 
 pub fn player_health(
     mut player: ResMut<Player>,
     mut flash: Query<&mut Sprite, With<PlayerHurtFlash>>,
+    mut hearts: Query<(&mut Sprite, &HeartUI), Without<PlayerHurtFlash>>,
     time: Res<Time>,
 ) {
     player.invulnerable -= time.delta_seconds();
     flash.single_mut().color =
         Color::srgba(1., 1., 1., (player.invulnerable * 15. - 14.).clamp(0., 1.0));
+    for (mut sprite, heart) in &mut hearts {
+        sprite.color = if heart.0 <= player.health {
+            Color::WHITE
+        } else {
+            Color::srgba(0., 0., 0., 0.)
+        };
+    }
+}
+
+#[derive(Component)]
+pub struct HeartUI(i32);
+
+pub fn player_hearts_init(mut commands: Commands, handles: Res<Handles>) {
+    for i in 1..=3 {
+        commands.spawn((
+            HeartUI(i),
+            SpriteBundle {
+                texture: handles.heart.clone(),
+                transform: Transform::from_xyz(-10., 190. - i as f32 * 14., 4.),
+                ..default()
+            },
+        ));
+    }
 }
