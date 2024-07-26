@@ -10,7 +10,7 @@ use crate::{
     collision::grid_collision,
     level::{Tile, Tiles, CELL_SIZE},
     player::{HurtPlayer, PlayerEntity, PLAYER_SIZE},
-    Clearable, Cycle, Handles, Hurtable, Layer, Vel,
+    Clearable, Cycle, Handles, Hurtable, Layer, RoomState, Vel,
 };
 
 static FLOATER_SIZE: f32 = 5.;
@@ -31,9 +31,17 @@ pub struct FloaterB {
     movement_timer: f32,
 }
 
+#[derive(Component)]
+pub struct Summoner {
+    movement_timer: f32,
+    summon_timer: f32,
+}
+
+#[derive(Clone, Copy)]
 pub enum EnemyKind {
     A,
     B,
+    Summoner,
 }
 
 #[derive(Component)]
@@ -77,7 +85,7 @@ pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>, cycle: Res<Cycle
             }
         }
     }
-    for i in 0..4 + cycle.cycle {
+    for i in 0..4 + cycle.cycle - cycle.rooms[cycle.current_room].difficulty / 2 {
         let delay = 2. + 0.3 * i as f32;
         let tile_center =
             (floor.choose(&mut thread_rng()).unwrap().as_vec2() + vec2(0.5, 0.5)) * CELL_SIZE;
@@ -91,14 +99,22 @@ pub fn spawn_enemies(mut commands: Commands, tiles: Res<Tiles>, cycle: Res<Cycle
             ) * CELL_SIZE,
             false,
         );
+        let kinds: &[_] = match cycle.cycle {
+            0 => &[(EnemyKind::B, 1.)],
+            1 => &[(EnemyKind::A, 1.), (EnemyKind::B, 1.)],
+            _ => &[
+                (EnemyKind::Summoner, 0.5),
+                (EnemyKind::A, 1.),
+                (EnemyKind::B, 1.),
+            ],
+        };
         commands.spawn((
             Spawner::create(
                 tile_center + offset,
-                if thread_rng().gen_bool(0.5) {
-                    EnemyKind::A
-                } else {
-                    EnemyKind::B
-                },
+                kinds
+                    .choose_weighted(&mut thread_rng(), |item| item.1)
+                    .unwrap()
+                    .0,
                 delay,
             ),
             Clearable,
@@ -148,7 +164,10 @@ pub fn spawners(
                                 color: Color::hsla(300., 1., 0.85, 1.),
                                 ..default()
                             },
-                            texture: handles.floater_occluded.clone(),
+                            texture: match spawner.kind {
+                                EnemyKind::A | EnemyKind::B => handles.floater_occluded.clone(),
+                                EnemyKind::Summoner => handles.summoner_occluded.clone(),
+                            },
                             transform: Transform::from_xyz(0., 0., 0.0001),
                             ..default()
                         },))
@@ -166,6 +185,7 @@ pub fn spawners(
                         texture: match spawner.kind {
                             EnemyKind::A => handles.floater_a.clone(),
                             EnemyKind::B => handles.floater_b.clone(),
+                            EnemyKind::Summoner => handles.summoner.clone(),
                         },
                         transform: *trans,
                         ..default()
@@ -208,6 +228,22 @@ pub fn spawners(
                         },
                     ));
                 }
+                EnemyKind::Summoner => {
+                    commands.entity(spawner.enemy).insert((
+                        Summoner {
+                            movement_timer: 0.,
+                            summon_timer: 9.,
+                        },
+                        Enemy {
+                            health: 3.,
+                            size: FLOATER_SIZE,
+                        },
+                        Hurtable {
+                            last_hit: f32::INFINITY,
+                            indicator: spawner.summon_occluder,
+                        },
+                    ));
+                }
             }
         }
     }
@@ -216,7 +252,7 @@ pub fn spawners(
 pub fn floater_a(
     mut commands: Commands,
     mut floaters: Query<(Entity, &mut Vel, &mut FloaterA, &Enemy)>,
-    mut transform: Query<&mut Transform, (With<FloaterA>, Without<PlayerEntity>)>,
+    mut transform: Query<&mut Transform, (With<Enemy>, Without<PlayerEntity>)>,
     player: Query<&Transform, With<PlayerEntity>>,
     tiles: Res<Tiles>,
     time: Res<Time>,
@@ -317,7 +353,7 @@ pub fn floater_a(
 pub fn floater_b(
     mut commands: Commands,
     mut floaters: Query<(Entity, &mut Vel, &mut FloaterB, &Enemy)>,
-    mut transform: Query<&mut Transform, (With<FloaterB>, Without<PlayerEntity>)>,
+    mut transform: Query<&mut Transform, (With<Enemy>, Without<PlayerEntity>)>,
     player: Query<&Transform, With<PlayerEntity>>,
     tiles: Res<Tiles>,
     time: Res<Time>,
@@ -386,3 +422,100 @@ pub fn floater_b(
         }
     }
 }
+
+pub fn summoner(
+    mut commands: Commands,
+    mut summoners: Query<(Entity, &mut Vel, &mut Summoner, &Enemy)>,
+    mut transform: Query<&mut Transform, (With<Enemy>, Without<PlayerEntity>)>,
+    player: Query<&Transform, With<PlayerEntity>>,
+    tiles: Res<Tiles>,
+    time: Res<Time>,
+    handles: Res<Handles>,
+    state: Res<State<RoomState>>,
+) {
+    const PROPULSION: f32 = 70.;
+    let player_pos = player.single();
+    for (entity, mut vel, mut summoner, enemy) in &mut summoners {
+        let mut trans = transform.get_mut(entity).unwrap();
+
+        summoner.summon_timer -= time.delta_seconds();
+        if (summoner.summon_timer < 0.) & (*state == RoomState::Fighting) {
+            commands.spawn((
+                Spawner::create(trans.translation.xy(), EnemyKind::B, 0.),
+                Clearable,
+            ));
+            summoner.summon_timer = 6.
+        }
+
+        if summoner.movement_timer == 0. {
+            let mut dir = Dir2::from_rng(&mut thread_rng()).as_vec2();
+            if ((trans.translation.y + dir.y * 24. < 10.) & (dir.y < 0.))
+                | ((trans.translation.y + dir.y * 24. > 180.) & (dir.y > 0.))
+            {
+                dir.y *= -1.
+            }
+            if ((trans.translation.x + dir.x * 24. < 10.) & (dir.x < 0.))
+                | ((trans.translation.x + dir.x * 24. > 180.) & (dir.x > 0.))
+            {
+                dir.x *= -1.
+            }
+            vel.0 = dir;
+        }
+        vel.0 *= 1. - time.delta_seconds() * 1.0;
+        if (summoner.movement_timer < 0.6) & (vel.length() != 0.) {
+            let dir = vel.normalize();
+            vel.0 += dir * time.delta_seconds() * PROPULSION;
+        }
+        summoner.movement_timer += time.delta_seconds();
+        let movement = vel.0 * time.delta_seconds();
+        let movement = grid_collision(&tiles, trans.translation.xy(), FLOATER_SIZE, movement, true);
+        trans.translation += movement.extend(0.);
+        let pos = trans.translation.xy();
+        vel.0 = movement / time.delta_seconds();
+        for other in &transform {
+            let other = other.translation.xy();
+            if other != pos {
+                let distance = other.distance(pos);
+                let direction = (pos - other).normalize();
+                vel.0 += direction * (2. * FLOATER_SIZE - distance).max(0.) / 2.4;
+            }
+        }
+
+        if player_pos.translation.xy().distance(pos) < FLOATER_SIZE + PLAYER_SIZE {
+            commands.trigger(HurtPlayer);
+        }
+
+        if summoner.movement_timer > 1.5 {
+            summoner.movement_timer = 0.
+        }
+
+        if enemy.health <= 0. {
+            commands.entity(entity).despawn_recursive();
+            commands.spawn(AudioBundle {
+                source: handles.sfx_enemy_death.clone(),
+                settings: PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Despawn,
+                    volume: bevy::audio::Volume::new(0.4),
+                    ..default()
+                },
+            });
+        }
+    }
+}
+
+// fn enemies(
+//     mut enemies: Query<(Entity, &mut Vel), With<Enemy>>,
+//     trans: Query<(&Transform, Enemy)>
+// ) {
+//     for (entity, mut vel) in &mut enemies {
+//         let pos = trans.get(entity).unwrap().translation.xy();
+//         for (other_pos, other) in &transform {
+//             let other = other.translation.xy();
+//             if other != pos {
+//                 let distance = other.distance(pos);
+//                 let direction = (pos - other).normalize();
+//                 vel.0 += direction * (2. * FLOATER_SIZE - distance).max(0.) / 2.4;
+//             }
+//         }
+//     }
+// }

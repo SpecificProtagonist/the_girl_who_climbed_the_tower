@@ -43,6 +43,10 @@ pub fn player_movement(
     handles: Res<Handles>,
     tiles: Res<Tiles>,
 ) {
+    if !(time.delta_seconds() > 0.) {
+        // TODO: investigate NaN velocity bug, then remove this
+        return;
+    }
     let Ok((mut pos, mut velocity, mut sprite, mut tex)) = player_entity.get_single_mut() else {
         return;
     };
@@ -73,6 +77,10 @@ pub fn player_movement(
         attempt_movement,
         false,
     );
+    if movement.x.is_nan() | movement.y.is_nan() {
+        // TODO: investigate NaN velocity bug, then remove this
+        return;
+    }
     velocity.0 = movement / time.delta_seconds();
     pos.translation += movement.extend(0.);
 
@@ -113,16 +121,16 @@ pub fn player_shoot(
     }
 
     let mut dir = Vec2::ZERO;
-    if keyboard_input.pressed(KeyCode::ArrowLeft) {
+    if keyboard_input.pressed(KeyCode::ArrowLeft) | keyboard_input.pressed(KeyCode::KeyJ) {
         dir -= Vec2::X;
     }
-    if keyboard_input.pressed(KeyCode::ArrowRight) {
+    if keyboard_input.pressed(KeyCode::ArrowRight) | keyboard_input.pressed(KeyCode::KeyL) {
         dir += Vec2::X;
     }
-    if keyboard_input.pressed(KeyCode::ArrowDown) {
+    if keyboard_input.pressed(KeyCode::ArrowDown) | keyboard_input.pressed(KeyCode::KeyK) {
         dir -= Vec2::Y;
     }
-    if keyboard_input.pressed(KeyCode::ArrowUp) {
+    if keyboard_input.pressed(KeyCode::ArrowUp) | keyboard_input.pressed(KeyCode::KeyI) {
         dir += Vec2::Y;
     }
 
@@ -205,17 +213,18 @@ pub fn player_hurt(
 pub fn player_health(
     mut player: ResMut<Player>,
     mut flash: Query<&mut Sprite, With<PlayerHurtFlash>>,
-    mut hearts: Query<(&mut Sprite, &HeartUI), Without<PlayerHurtFlash>>,
+    mut hearts: Query<(&mut Handle<Image>, &HeartUI), Without<PlayerHurtFlash>>,
     time: Res<Time>,
+    handles: Res<Handles>,
 ) {
     player.invulnerable -= time.delta_seconds();
     flash.single_mut().color =
         Color::srgba(1., 1., 1., (player.invulnerable * 15. - 14.).clamp(0., 1.0));
-    for (mut sprite, heart) in &mut hearts {
-        sprite.color = if heart.0 <= player.health {
-            Color::WHITE
+    for (mut tex, heart) in &mut hearts {
+        *tex = if heart.0 <= player.health {
+            handles.heart.clone()
         } else {
-            Color::srgba(0., 0., 0., 0.)
+            handles.heart_empty.clone()
         };
     }
 }
@@ -223,13 +232,12 @@ pub fn player_health(
 #[derive(Component)]
 pub struct HeartUI(i32);
 
-pub fn player_hearts_init(mut commands: Commands, handles: Res<Handles>) {
+pub fn player_hearts_init(mut commands: Commands) {
     for i in 1..=3 {
         commands.spawn((
             HeartUI(i),
             SpriteBundle {
-                texture: handles.heart.clone(),
-                transform: Transform::from_xyz(-10., 190. - i as f32 * 14., 4.),
+                transform: Transform::from_xyz(-7., 193. - i as f32 * 14., 4.),
                 ..default()
             },
         ));

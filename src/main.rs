@@ -17,7 +17,7 @@ use bevy::utils::HashMap;
 use bevy_asset_loader::prelude::*;
 use bullet::move_bullets;
 use deathscreen::death_screen;
-use enemy::{floater_a, floater_b, spawn_enemies, spawners, Enemy, Spawner};
+use enemy::{floater_a, floater_b, spawn_enemies, spawners, summoner, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
 use music::{music_volume, play_music};
@@ -64,8 +64,8 @@ fn main() {
                 spawners,
                 floater_a,
                 floater_b,
-                gargoyles,
-                check_cleared.run_if(in_state(RoomState::Fighting)),
+                summoner,
+                (gargoyles, check_cleared).run_if(in_state(RoomState::Fighting)),
                 check_exit.run_if(in_state(RoomState::Cleared)),
                 death_screen.run_if(in_state(RoomState::PlayerDead)),
             )
@@ -135,6 +135,10 @@ struct Handles {
     floater_b: Handle<Image>,
     #[asset(path = "floater_occluded.aseprite")]
     floater_occluded: Handle<Image>,
+    #[asset(path = "summoner.aseprite")]
+    summoner: Handle<Image>,
+    #[asset(path = "summoner_occluded.aseprite")]
+    summoner_occluded: Handle<Image>,
     #[asset(path = "door.aseprite")]
     door: Handle<Image>,
     #[asset(path = "grate_circle.aseprite")]
@@ -143,6 +147,8 @@ struct Handles {
     cycle_indicator: Handle<Image>,
     #[asset(path = "heart.aseprite")]
     heart: Handle<Image>,
+    #[asset(path = "heart_empty.aseprite")]
+    heart_empty: Handle<Image>,
     #[asset(path = "ouroboros.aseprite")]
     ouroboros: Handle<Image>,
     #[asset(path = "black.aseprite")]
@@ -204,7 +210,7 @@ fn setup(
     commands.insert_resource(Cycle::new(&ldtk));
     commands.insert_resource(ldtk);
 
-    windows.single_mut().title = "The girl who climbed the tower".to_owned();
+    windows.single_mut().title = "The Girl Who Climbed the Tower".to_owned();
 
     let mut camera = Camera2dBundle {
         transform: Transform::from_xyz(101., 101., 10.),
@@ -265,15 +271,20 @@ fn check_exit(
     if cycle.current_room == cycle.rooms.len() {
         cycle.current_room = 0;
         cycle.cycle += 1;
-        let room = cycle.rooms.choose_mut(&mut thread_rng()).unwrap();
-        if room.difficulty < room.max_difficulty {
-            room.difficulty += 1;
+        let mut rooms = cycle.rooms.iter_mut().collect::<Vec<_>>();
+        rooms.shuffle(&mut thread_rng());
+        for _ in 0..2 {
+            if rooms[0].difficulty < rooms[0].max_difficulty {
+                rooms[0].difficulty += 1;
+            }
+            rooms.remove(0);
         }
     }
 
     next_state.set(RoomState::Fighting);
 }
 
+#[derive(Debug)]
 struct Room {
     id: i32,
     difficulty: i32,
@@ -293,14 +304,15 @@ impl Cycle {
         for level in &ldtk.levels {
             let id = level.world_x / 192;
             let difficulty = level.world_y / 192;
-            let max_difficulty = available.entry(id).or_insert(0);
-            *max_difficulty = (*max_difficulty).max(difficulty);
+            let (min, max) = available.entry(id).or_insert((5, 0));
+            *max = (*max).max(difficulty);
+            *min = (*min).min(difficulty);
         }
         let mut rooms = Vec::new();
-        for (id, max) in available {
+        for (id, (min, max)) in available {
             rooms.push(Room {
                 id,
-                difficulty: 0,
+                difficulty: min,
                 max_difficulty: max,
             });
         }
