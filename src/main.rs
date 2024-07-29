@@ -129,16 +129,18 @@ struct Handles {
     gargoyle: Handle<Image>,
     #[asset(path = "gargoyle_inactive.aseprite")]
     gargoyle_inactive: Handle<Image>,
+    #[asset(path = "summon_ani.aseprite")]
+    summon: Handle<AnimationData>,
     #[asset(path = "floater_a.aseprite")]
-    floater_a: Handle<Image>,
+    floater_a: Handle<AnimationData>,
     #[asset(path = "floater_b.aseprite")]
-    floater_b: Handle<Image>,
+    floater_b: Handle<AnimationData>,
     #[asset(path = "floater_occluded.aseprite")]
-    floater_occluded: Handle<Image>,
+    floater_occluded: Handle<AnimationData>,
     #[asset(path = "summoner.aseprite")]
-    summoner: Handle<Image>,
+    summoner: Handle<AnimationData>,
     #[asset(path = "summoner_occluded.aseprite")]
-    summoner_occluded: Handle<Image>,
+    summoner_occluded: Handle<AnimationData>,
     #[asset(path = "door.aseprite")]
     door: Handle<Image>,
     #[asset(path = "grate_circle.aseprite")]
@@ -157,9 +159,6 @@ struct Handles {
     player_hurt: Handle<Image>,
     #[asset(path = "key_enter.aseprite")]
     key_enter: Handle<Image>,
-
-    #[asset(path = "summon_ani.aseprite")]
-    summon: Handle<AnimationData>,
 
     #[asset(path = "sfx/enemy_death.ogg")]
     sfx_enemy_death: Handle<AudioSource>,
@@ -235,7 +234,7 @@ fn check_cleared(
                 source: handles.sfx_clear.clone(),
                 settings: PlaybackSettings {
                     mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: bevy::audio::Volume::new(0.2),
+                    volume: bevy::audio::Volume::new(0.15),
                     ..default()
                 },
             });

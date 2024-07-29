@@ -5,7 +5,7 @@ use bevy::{
 use rand::prelude::*;
 
 use crate::{
-    aseprite::Animation,
+    aseprite::{Animation, AnimationData},
     bullet::Bullet,
     collision::grid_collision,
     level::{Tile, Tiles, CELL_SIZE},
@@ -128,18 +128,19 @@ pub fn spawners(
     mut sprites: Query<&mut Sprite>,
     time: Res<Time>,
     handles: Res<Handles>,
+    ani_data: Res<Assets<AnimationData>>,
 ) {
     for (entity, trans, mut spawner) in &mut spawners {
         let step = spawner.timer - time.delta_seconds()..spawner.timer;
         spawner.timer -= time.delta_seconds();
         if step.contains(&1.2) {
-            commands.spawn((
+            commands.entity(entity).insert((
                 Layer(-0.9),
                 SpriteBundle {
                     transform: *trans,
                     ..default()
                 },
-                Animation::new(handles.summon.clone()),
+                Animation::new(handles.summon.clone(), false),
             ));
         }
         if step.contains(&1.0) {
@@ -165,8 +166,16 @@ pub fn spawners(
                                 ..default()
                             },
                             texture: match spawner.kind {
-                                EnemyKind::A | EnemyKind::B => handles.floater_occluded.clone(),
-                                EnemyKind::Summoner => handles.summoner_occluded.clone(),
+                                EnemyKind::A | EnemyKind::B => {
+                                    ani_data.get(&handles.floater_occluded).unwrap().frames[0]
+                                        .0
+                                        .clone()
+                                }
+                                EnemyKind::Summoner => {
+                                    ani_data.get(&handles.summoner_occluded).unwrap().frames[0]
+                                        .0
+                                        .clone()
+                                }
                             },
                             transform: Transform::from_xyz(0., 0., 0.0001),
                             ..default()
@@ -183,9 +192,15 @@ pub fn spawners(
                             ..default()
                         },
                         texture: match spawner.kind {
-                            EnemyKind::A => handles.floater_a.clone(),
-                            EnemyKind::B => handles.floater_b.clone(),
-                            EnemyKind::Summoner => handles.summoner.clone(),
+                            EnemyKind::A => ani_data.get(&handles.floater_a).unwrap().frames[0]
+                                .0
+                                .clone(),
+                            EnemyKind::B => ani_data.get(&handles.floater_b).unwrap().frames[0]
+                                .0
+                                .clone(),
+                            EnemyKind::Summoner => {
+                                ani_data.get(&handles.summoner).unwrap().frames[0].0.clone()
+                            }
                         },
                         transform: *trans,
                         ..default()
@@ -203,6 +218,9 @@ pub fn spawners(
             commands.entity(entity).despawn();
             match spawner.kind {
                 EnemyKind::A => {
+                    commands
+                        .entity(spawner.summon_occluder)
+                        .insert(Animation::new(handles.floater_occluded.clone(), true));
                     commands.entity(spawner.enemy).insert((
                         FloaterA { movement_timer: 0. },
                         Enemy {
@@ -213,9 +231,13 @@ pub fn spawners(
                             last_hit: f32::INFINITY,
                             indicator: spawner.summon_occluder,
                         },
+                        Animation::new(handles.floater_a.clone(), true),
                     ));
                 }
                 EnemyKind::B => {
+                    commands
+                        .entity(spawner.summon_occluder)
+                        .insert(Animation::new(handles.floater_occluded.clone(), true));
                     commands.entity(spawner.enemy).insert((
                         FloaterB { movement_timer: 0. },
                         Enemy {
@@ -226,9 +248,13 @@ pub fn spawners(
                             last_hit: f32::INFINITY,
                             indicator: spawner.summon_occluder,
                         },
+                        Animation::new(handles.floater_b.clone(), true),
                     ));
                 }
                 EnemyKind::Summoner => {
+                    commands
+                        .entity(spawner.summon_occluder)
+                        .insert(Animation::new(handles.summoner_occluded.clone(), true));
                     commands.entity(spawner.enemy).insert((
                         Summoner {
                             movement_timer: 0.,
@@ -242,6 +268,7 @@ pub fn spawners(
                             last_hit: f32::INFINITY,
                             indicator: spawner.summon_occluder,
                         },
+                        Animation::new(handles.summoner.clone(), true),
                     ));
                 }
             }

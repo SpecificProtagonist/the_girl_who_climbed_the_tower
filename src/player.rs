@@ -43,7 +43,7 @@ pub fn player_movement(
     handles: Res<Handles>,
     tiles: Res<Tiles>,
 ) {
-    if !(time.delta_seconds() > 0.) {
+    if time.delta_seconds() <= 0. {
         // TODO: investigate NaN velocity bug, then remove this
         return;
     }
