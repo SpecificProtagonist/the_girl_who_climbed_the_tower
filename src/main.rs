@@ -124,6 +124,8 @@ struct Handles {
         collection(typed)
     )]
     player_side: Vec<Handle<Image>>,
+    #[asset(path = "drop.aseprite")]
+    drop: Handle<AnimationData>,
     #[asset(path = "bullet.aseprite")]
     bullet: Handle<Image>,
     #[asset(path = "gargoyle.aseprite")]
@@ -247,16 +249,17 @@ fn check_cleared(
 
 fn check_exit(
     mut commands: Commands,
-    player: Query<&Transform, With<PlayerEntity>>,
+    player_entity: Query<&Transform, With<PlayerEntity>>,
     door: Query<&Transform, With<Door>>,
     clearable: Query<Entity, With<Clearable>>,
     mut cycle: ResMut<Cycle>,
     mut next_state: ResMut<NextState<RoomState>>,
+    mut player: ResMut<Player>,
 ) {
     // Check for exit
-    let player = player.single().translation.xy();
+    let player_pos = player_entity.single().translation.xy();
     let door = door.single().translation.xy();
-    let off = (door - player).abs();
+    let off = (door - player_pos).abs();
     if (off.x > 5.) | (off.y > 5.) {
         return;
     }
@@ -280,6 +283,7 @@ fn check_exit(
             rooms.remove(0);
         }
     }
+    player.spawn_timer = 0.;
 
     next_state.set(RoomState::Fighting);
 }

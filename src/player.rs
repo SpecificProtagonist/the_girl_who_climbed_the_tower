@@ -19,6 +19,7 @@ pub struct Player {
     shoot_cooldown: f32,
     pub health: i32,
     pub invulnerable: f32,
+    pub spawn_timer: f32,
 }
 
 impl Default for Player {
@@ -28,6 +29,7 @@ impl Default for Player {
             shoot_cooldown: 0.,
             health: 3,
             invulnerable: 0.,
+            spawn_timer: 0.,
         }
     }
 }
@@ -45,6 +47,10 @@ pub fn player_movement(
 ) {
     if time.delta_seconds() <= 0. {
         // TODO: investigate NaN velocity bug, then remove this
+        return;
+    }
+    player.spawn_timer += time.delta_seconds();
+    if player.spawn_timer < 0.4 {
         return;
     }
     let Ok((mut pos, mut velocity, mut sprite, mut tex)) = player_entity.get_single_mut() else {

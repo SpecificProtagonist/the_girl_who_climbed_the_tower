@@ -8,6 +8,7 @@ use bevy::{
 };
 
 use crate::{
+    aseprite::Animation,
     bullet::Bullet,
     ldtk::{EntityInstance, LdtkProject},
     player::{PlayerEntity, PlayerHurtFlash},
@@ -289,9 +290,9 @@ pub fn spawn_level(
                         anchor: Anchor::Custom(vec2(0., -0.5 + 3. / 18.)),
                         ..default()
                     },
-                    texture: handles.player_down[0].clone(),
                     ..default()
                 },
+                Animation::new(handles.drop.clone(), false),
             ))
             .with_children(|b| {
                 b.spawn((

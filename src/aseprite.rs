@@ -53,16 +53,15 @@ pub fn animations(
         ani.timer -= time.delta_seconds();
         if ani.timer < 0. {
             let data = assets.get(&ani.data).unwrap();
-            ani.index += 1;
             if ani.index as usize == data.frames.len() {
-                if ani.repeat {
-                    ani.index = 0;
-                } else {
-                    ani.index -= 1;
-                }
+                continue;
             }
             *tex = data.frames[ani.index as usize].0.clone();
             ani.timer += data.frames[ani.index as usize].1;
+            ani.index += 1;
+            if ani.repeat & (ani.index as usize == data.frames.len()) {
+                ani.index = 0;
+            }
         }
     }
 }
@@ -79,7 +78,7 @@ impl Animation {
     pub fn new(data: Handle<AnimationData>, repeat: bool) -> Self {
         Self {
             data,
-            index: -1,
+            index: 0,
             timer: 0.,
             repeat,
         }
