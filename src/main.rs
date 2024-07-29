@@ -20,7 +20,7 @@ use deathscreen::death_screen;
 use enemy::{floater_a, floater_b, spawn_enemies, spawners, summoner, Enemy, Spawner};
 use ldtk::{LdtkLoader, LdtkProject};
 use level::{deactivate_gargoyles, gargoyles, open_door, spawn_level};
-use music::{music_volume, play_music};
+use music::{music_volume, play_music, MusicVolume};
 use player::{
     player_health, player_hearts_init, player_hurt, player_movement, player_shoot, Player,
     PlayerEntity,
@@ -49,6 +49,7 @@ fn main() {
         .register_asset_loader(AsepriteAniLoader)
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<Player>()
+        .init_resource::<MusicVolume>()
         .add_systems(OnEnter(LoadState::Loaded), (setup, player_hearts_init))
         .add_systems(
             OnEnter(RoomState::Fighting),
