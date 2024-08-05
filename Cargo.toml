@@ -22,7 +22,7 @@ strip = "debuginfo"
 [dependencies]
 anyhow = "1.0.86"
 asefile = "0.3.8"
-bevy = { version = "0.14", default-features = false, features = ["bevy_sprite","bevy_audio","bevy_text","bevy_winit","vorbis","x11","webgl2"]}
+bevy = { version = "0.14", default-features = false, features = ["bevy_sprite","bevy_audio","bevy_text","bevy_winit","vorbis","x11","webgl2","dynamic_linking"]}
 bevy_asset_loader = {version="0.21", features=["2d"]}
 rand = "0.8.5"
 serde = "1"
